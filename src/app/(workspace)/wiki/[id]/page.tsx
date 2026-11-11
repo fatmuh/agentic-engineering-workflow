@@ -37,6 +37,7 @@ async function WikiDetailBody({ params }: { params: Promise<{ id: string }> }) {
   return (
     <PagePermissionGate permission="wiki.view">
       <WikiPageView
+        key={page.id}
         initialPage={page}
         initialLabels={labels}
         storageConfigured={Boolean(settings && isConfigured(settings))}

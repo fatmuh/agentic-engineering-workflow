@@ -1,0 +1,102 @@
+.permissions-workspace {
+  --permission-granted: var(--foreground);
+  --permissions-secondary: color-mix(in srgb, var(--muted-foreground) 90%, var(--foreground));
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+  color: var(--foreground);
+  font-size: .875rem;
+  line-height: 1.5;
+  container-type: inline-size;
+}
+.permissions-workspace :is(a, button, input, select, [tabindex]):not([data-slot="input-group-control"]):focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+}
+.permissions-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.permissions-heading { flex: 1 1 20rem; min-inline-size: 0; }
+.permissions-heading h1 { font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -.01em; }
+.permissions-subtitle { margin-block-start: .375rem; color: var(--permissions-secondary); font-size: .8125rem; text-wrap: pretty; }
+.permissions-guidance { display: flex; align-items: start; gap: .5rem; max-inline-size: 75ch; color: var(--permissions-secondary); font-size: .8125rem; }
+.permissions-guidance svg { margin-block-start: .125rem; }
+.permissions-table-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .375rem 1rem; margin-block-end: -.5rem; color: var(--permissions-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.permissions-table-scroll { min-inline-size: 0; max-inline-size: 100%; max-block-size: min(70dvh, 54rem); overflow: auto; isolation: isolate; border: 1px solid var(--border); border-radius: .75rem; background: var(--card); scroll-padding-inline-start: 15rem; scroll-padding-block-start: 10rem; }
+.permissions-matrix thead { position: sticky; inset-block-start: 0; z-index: 3; }
+.permissions-table-scroll:focus-visible { outline-offset: 3px; }
+.permissions-matrix { inline-size: 100%; border-collapse: separate; border-spacing: 0; font-size: .8125rem; line-height: 1.5; }
+.permissions-matrix th, .permissions-matrix td { padding: .625rem 1rem; border-block-end: 1px solid var(--border); }
+.permissions-matrix thead th { min-inline-size: 10rem; padding-block: .875rem; background: var(--card); font-weight: 500; text-align: center; vertical-align: top; overflow-wrap: anywhere; }
+.permissions-matrix .permissions-name-column { position: sticky; inset-inline-start: 0; z-index: 1; min-inline-size: 15rem; inline-size: 36%; max-inline-size: 24rem; background: var(--card); text-align: start; font-weight: 400; }
+.permissions-matrix thead .permissions-name-column { vertical-align: middle; font-weight: 500; }
+.permissions-role-name { display: block; color: var(--foreground); text-underline-offset: 3px; }
+.permissions-member-count { display: block; margin-block-start: .125rem; color: var(--permissions-secondary); font-weight: 400; font-variant-numeric: tabular-nums; }
+.permissions-role-kind { display: flex; justify-content: center; align-items: center; gap: .25rem; margin-block-start: .375rem; color: var(--permissions-secondary); font-size: .75rem; font-weight: 400; }
+.permissions-matrix .permissions-group-row :is(th, td) { padding-block: .5rem; background: var(--muted); color: var(--permissions-secondary); font-size: .75rem; font-weight: 500; }
+.permissions-matrix td { position: relative; text-align: center; }
+.permissions-matrix tbody tr:last-child :is(th, td) { border-block-end: 0; }
+.permissions-cell-control { position: relative; display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; vertical-align: middle; border-radius: .375rem; cursor: pointer; }
+.permissions-cell-control input { position: absolute; inset: 0; margin: 0; inline-size: 100%; block-size: 100%; opacity: 0; cursor: pointer; }
+.permissions-cell-control:has(input:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 3px; }
+.permissions-cell-control:has(input:disabled) { cursor: not-allowed; }
+.permissions-cell-control input:disabled { cursor: not-allowed; }
+.permissions-cell-mark { display: grid; place-items: center; inline-size: 1.375rem; block-size: 1.375rem; border: 1px solid var(--muted-foreground); border-radius: .375rem; color: var(--permissions-secondary); pointer-events: none; }
+.permissions-cell-mark svg { grid-area: 1 / 1; inline-size: .875rem; block-size: .875rem; }
+.permissions-cell-control input:checked + .permissions-cell-mark { border-color: var(--permission-granted); background: var(--permission-granted); color: var(--background); }
+/* transitions.dev — Checkbox check (transitions/checkbox-check.md).
+ * Native :checked drives the decorative mark; keep both SVGs mounted so
+ * reversing a check mid-draw retargets the transition without a remount.
+ * pathLength="1" normalizes the check path, avoiding runtime measurement. */
+.permissions-cell-mark.t-check {
+  --check-box: 150ms;
+  --check-draw: 350ms;
+  --check-delay: 0ms;
+  --check-uncheck: 150ms;
+  --check-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-len: 1;
+}
+.permissions-cell-mark.t-check .permissions-cell-tick path { stroke-dasharray: var(--check-len); stroke-dashoffset: var(--check-len); }
+.permissions-cell-control input:checked + .t-check .permissions-cell-tick path { stroke-dashoffset: 0; }
+.permissions-cell-control input:checked + .t-check .permissions-cell-dash { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .permissions-cell-mark.t-check { transition: background-color var(--check-box) var(--check-ease), border-color var(--check-box) var(--check-ease); }
+  .permissions-cell-mark.t-check .permissions-cell-tick path { transition: stroke-dashoffset var(--check-uncheck) var(--check-ease); }
+  .permissions-cell-control input:checked + .t-check .permissions-cell-tick path { transition: stroke-dashoffset var(--check-draw) var(--check-ease) var(--check-delay); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .permissions-cell-mark.t-check, .permissions-cell-mark.t-check .permissions-cell-tick path { transition: none !important; }
+}
+.permissions-static-state { display: inline-grid; place-items: center; min-inline-size: 2rem; min-block-size: 2rem; vertical-align: middle; }
+.permissions-check { inline-size: 1rem; block-size: 1rem; color: var(--permission-granted); }
+.permissions-minus { inline-size: .875rem; block-size: .875rem; color: var(--permissions-secondary); }
+.permissions-matrix td[data-changed] { background: var(--muted); }
+.permissions-empty { padding: 2rem 1rem; text-align: center; overflow-wrap: anywhere; }
+.permissions-empty h2 { font-size: .875rem; font-weight: 500; }
+.permissions-empty p { margin-block: .375rem .75rem; color: var(--permissions-secondary); }
+.permissions-empty :is(a, button) { padding: .375rem; text-decoration: underline; text-underline-offset: 3px; }
+.permissions-stale-grants { display: flex; align-items: start; gap: .625rem; padding: .875rem; border: 1px solid var(--border); border-radius: .5rem; font-size: .8125rem; }
+.permissions-stale-grants ul { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-start: .5rem; }
+.permissions-stale-grants li { display: flex; align-items: center; gap: .375rem; border: 1px solid var(--border); border-radius: .375rem; padding-inline-start: .5rem; overflow-wrap: anywhere; }
+.permissions-stale-grants button { display: grid; place-items: center; min-inline-size: 1.75rem; min-block-size: 1.75rem; }
+.permissions-feedback:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+.permissions-feedback { color: var(--permissions-secondary); font-size: .8125rem; }
+.permissions-error { display: flex; align-items: start; gap: .5rem; border: 1px solid var(--destructive); border-radius: .5rem; padding: .75rem; color: var(--foreground); }
+.permissions-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding-block-start: .25rem; font-size: .75rem; color: var(--permissions-secondary); }
+.permissions-save-state { margin-block-end: .25rem; font-weight: 500; color: var(--foreground); }
+.permissions-save-actions { display: flex; flex-wrap: wrap; gap: .625rem; }
+@media (hover: hover) {
+  .permissions-role-name:hover { text-decoration: underline; }
+  .permissions-cell-control:hover { background: var(--muted); }
+}
+@container (max-width: 36rem) {
+  .permissions-matrix .permissions-name-column { min-inline-size: 9rem; inline-size: 9rem; max-inline-size: 9rem; overflow-wrap: anywhere; padding-inline: .75rem; }
+  .permissions-matrix thead th { min-inline-size: 9rem; }
+  .permissions-table-scroll { scroll-padding-inline-start: 9rem; }
+  .permissions-footer > div { min-inline-size: 0; }
+}
+@media (forced-colors: active) {
+  .permissions-workspace :is(a, button, input, select, [tabindex]):not([data-slot="input-group-control"]):focus-visible,
+  .permissions-cell-control:has(input:focus-visible) { outline-color: Highlight; }
+  .permissions-cell-control input { opacity: 1; appearance: auto; accent-color: auto; }
+  .permissions-cell-mark { visibility: hidden; }
+  .permissions-static-state svg { color: CanvasText; }
+}

@@ -1,0 +1,166 @@
+.roles-edit-drawer[data-side="right"] {
+  --role-drawer-inset: .5rem;
+  position: fixed;
+  inset-block: max(var(--role-drawer-inset), env(safe-area-inset-top)) max(var(--role-drawer-inset), env(safe-area-inset-bottom));
+  right: max(var(--role-drawer-inset), env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  max-height: calc(100dvh - max(var(--role-drawer-inset), env(safe-area-inset-top)) - max(var(--role-drawer-inset), env(safe-area-inset-bottom)));
+  width: calc(100% - max(var(--role-drawer-inset), env(safe-area-inset-left)) - max(var(--role-drawer-inset), env(safe-area-inset-right)));
+  max-width: 26rem;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 0 0 3px var(--muted), 0 12px 40px rgb(0 0 0 / .12);
+}
+
+.roles-edit-drawer .roles-edit-header {
+  flex-shrink: 0;
+  min-inline-size: 0;
+  gap: .375rem;
+  padding: 1rem;
+  padding-inline-end: 3.25rem;
+  border-block-end: 1px dashed var(--border);
+  overflow-wrap: anywhere;
+}
+
+.roles-edit-header [data-slot="sheet-title"] {
+  font-size: .875rem;
+  line-height: 1.4;
+}
+
+.roles-edit-header [data-slot="sheet-description"] {
+  font-size: .75rem;
+  line-height: 1.5;
+}
+
+.roles-edit-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.roles-edit-body {
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 1rem;
+}
+
+.roles-edit-body > section {
+  min-inline-size: 0;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.roles-edit-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: .75rem;
+  min-inline-size: 0;
+  padding: 1rem;
+  background: var(--card);
+}
+
+.roles-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
+.roles-edit-body h3 {
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .05em;
+}
+
+.roles-edit-body :is(input, textarea) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+@media (min-width: 40rem) {
+  .roles-edit-drawer[data-side="right"] {
+    --role-drawer-inset: 1rem;
+  }
+}
+
+@media (max-width: 39.999rem) {
+  .roles-edit-body :is(input, textarea) {
+    font-size: 1rem;
+  }
+}
+
+/* transitions.dev — Panel reveal (transitions/panel-reveal.md).
+ * Base UI owns data-open/starting-style/ending-style and retains the popup
+ * until its transitions finish. Adapt the recipe to the right-hand drawer:
+ * slide fully beyond the right edge instead of revealing vertically.
+ * Cancel Sheet's separate translate to avoid combining two movements.
+ */
+.roles-edit-drawer.t-panel-slide[data-side="right"] {
+  --panel-open-dur: 400ms;
+  --panel-close-dur: 350ms;
+  --panel-translate-x: calc(100% + max(var(--role-drawer-inset), env(safe-area-inset-right)) + .25rem);
+  --panel-blur: 2px;
+  --panel-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  translate: none;
+  transform: translateX(var(--panel-translate-x));
+  opacity: 0;
+  filter: blur(var(--panel-blur));
+  pointer-events: none;
+  transition:
+    transform var(--panel-close-dur) var(--panel-ease),
+    opacity var(--panel-close-dur) var(--panel-ease),
+    filter var(--panel-close-dur) var(--panel-ease);
+}
+
+.roles-edit-drawer.t-panel-slide[data-side="right"][data-open] {
+  transform: translateX(0);
+  opacity: 1;
+  filter: blur(0);
+  pointer-events: auto;
+  transition-duration: var(--panel-open-dur);
+}
+
+/* Both role sheets mount already open. Base UI skips its starting phase in
+ * that case, so provide the browser's before-change style on first paint. */
+@starting-style {
+  .roles-edit-drawer.t-panel-slide[data-side="right"][data-open] {
+    transform: translateX(var(--panel-translate-x));
+    opacity: 0;
+    filter: blur(var(--panel-blur));
+  }
+}
+
+.roles-edit-drawer.t-panel-slide[data-side="right"][data-starting-style],
+.roles-edit-drawer.t-panel-slide[data-side="right"][data-ending-style] {
+  transform: translateX(var(--panel-translate-x));
+  opacity: 0;
+  filter: blur(var(--panel-blur));
+  pointer-events: none;
+}
+
+.roles-edit-drawer.t-panel-slide[data-side="right"][data-ending-style] {
+  transition-duration: var(--panel-close-dur);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roles-edit-drawer.t-panel-slide[data-side="right"],
+  .roles-edit-drawer.t-panel-slide[data-side="right"]:is([data-open], [data-starting-style], [data-ending-style]) {
+    transform: none;
+    translate: none;
+    filter: none;
+    transition: none !important;
+  }
+}

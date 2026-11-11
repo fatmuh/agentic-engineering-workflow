@@ -1,23 +1,27 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, RefreshCw, TagIcon, WikiIcon, X } from "@/components/icons";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, Copy, ExternalLink, FileDoc, Filter, Info, MoreHorizontal, Plus, Search, X } from "@/components/icons";
+import type { FilterValue } from "@/components/ui/filter-menu-clean";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { FilterMenu, type FilterGroup } from "@/components/ui/filter-menu-clean";
+import "./wiki-list.css";
 import { usePermission } from "@/components/dashboard/permission-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button-clean";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import type { WikiLabelResponse, WikiPageSummary } from "@/lib/wiki";
 
@@ -25,6 +29,10 @@ import type { WikiLabelResponse, WikiPageSummary } from "@/lib/wiki";
  * /wiki — the flat page list. Search and label filtering are client-side over
  * the same payload the API returns for every visit; the plan explicitly rules
  * out a query language, so there is nothing to push down.
+ *
+ * Row anatomy follows Plane's Pages list: a whole-row link (icon + title) with
+ * a trailing cluster (editor avatar, info, overflow menu). Dates are
+ * tooltip-only — Plane keeps them out of the row itself.
  */
 
 function formatDate(iso: string): string {
@@ -47,6 +55,80 @@ function initials(name: string | null): string {
     .toUpperCase();
 }
 
+type SortKey = "name" | "created" | "modified";
+type SortDir = "asc" | "desc";
+
+const SORT_KEY_LABELS: Record<SortKey, string> = {
+  name: "Name",
+  created: "Date created",
+  modified: "Date modified",
+};
+
+/** Plane's search: a collapsed icon that expands to a 256px field; the first
+ *  Escape clears the query, the second closes the field. */
+function CollapsingSearch({
+  query,
+  onQueryChange,
+}: {
+  query: string;
+  onQueryChange: (query: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  if (!open) {
+    return (
+      <Button
+        size="lg"
+        variant="secondary"
+        icon={<Search />}
+        aria-label="Search pages"
+        aria-expanded={false}
+        onClick={() => setOpen(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="wiki-search">
+      <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <label htmlFor={inputId} className="sr-only">Search pages by title</label>
+      <input
+        id={inputId}
+        ref={inputRef}
+        type="search"
+        className="wiki-search-input"
+        placeholder="Search pages"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          if (query) onQueryChange("");
+          else setOpen(false);
+        }}
+      />
+      {query && (
+        <button
+          type="button"
+          className="wiki-search-clear"
+          aria-label="Clear search"
+          onClick={() => {
+            onQueryChange("");
+            inputRef.current?.focus();
+          }}
+        >
+          <X className="size-3.5" aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function WikiView({
   initialPages,
   initialLabels,
@@ -58,297 +140,180 @@ export function WikiView({
   const { can } = usePermission();
   const canCreate = can("wiki.create");
 
-  const [pages, setPages] = useState(initialPages);
-  const [labels, setLabels] = useState(initialLabels);
+  const pages = initialPages;
+  const labels = initialLabels;
   const [query, setQuery] = useState("");
-  const [labelFilter, setLabelFilter] = useState<Set<string>>(() => new Set());
-  const [createOpen, setCreateOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterValue>({});
+  const [view, setView] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("modified");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [infoPage, setInfoPage] = useState<WikiPageSummary | null>(null);
+  const [creating, setCreating] = useState(false);
+  const createInFlight = useRef(false);
 
-  const refresh = useCallback(async () => {
+  const labelGroups: FilterGroup[] = useMemo(
+    () => [{ id: "label", label: "Label", options: labels.map((label) => ({ id: label.id, label: label.name })) }],
+    [labels]
+  );
+  const selectedLabelCount = (filters.label ?? []).length;
+
+  async function createPage(): Promise<void> {
+    if (!canCreate || createInFlight.current) return;
+    createInFlight.current = true;
+    setCreating(true);
     try {
-      const [pageResponse, labelResponse] = await Promise.all([
-        apiFetch("/api/wiki/pages"),
-        apiFetch("/api/wiki/labels"),
-      ]);
-      if (pageResponse.ok) {
-        const data = await pageResponse.json();
-        if (Array.isArray(data?.pages)) setPages(data.pages);
-      }
-      if (labelResponse.ok) {
-        const data = await labelResponse.json();
-        if (Array.isArray(data?.labels)) setLabels(data.labels);
+      const response = await apiFetch("/api/wiki/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Untitled", labelIds: [] }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data?.error || "Failed to create the page. Please try again.");
+      } else if (typeof data?.page?.id === "string" && data.page.id) {
+        router.push(`/wiki/${data.page.id}${can("wiki.update") ? "?edit=true" : ""}`);
+        // Keep creation locked until navigation unmounts the list.
+        return;
+      } else {
+        toast.error("Could not open the new page. Refresh the list to find it.");
       }
     } catch {
-      /* transient — the list keeps its last good rows */
+      toast.error("Network error. Please try again.");
     }
-  }, []);
+    createInFlight.current = false;
+    setCreating(false);
+  }
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return pages.filter((page) => {
       if (needle && !page.title.toLowerCase().includes(needle)) return false;
-      if (labelFilter.size > 0) {
-        const ids = new Set(page.labels.map((label) => label.id));
-        for (const wanted of labelFilter) {
-          if (!ids.has(wanted)) return false;
-        }
-      }
-      return true;
+      if (view === "labeled" && page.labels.length === 0) return false;
+      if (view === "unlabeled" && page.labels.length > 0) return false;
+      return (filters.label ?? []).every((id) => page.labels.some((label) => label.id === id));
+    }).sort((a, b) => {
+      const difference =
+        sortKey === "name"
+          ? a.title.localeCompare(b.title)
+          : sortKey === "created"
+            ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      return (sortDir === "asc" ? difference : -difference) || a.id.localeCompare(b.id);
     });
-  }, [pages, query, labelFilter]);
+  }, [pages, query, filters, view, sortKey, sortDir]);
 
-  function toggleLabel(id: string, checked: boolean): void {
-    setLabelFilter((previous) => {
-      const next = new Set(previous);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
-
-  return (
-    <section aria-label="Wiki" className="flex min-w-0 flex-col gap-4">
-      <h1 className="sr-only">Wiki</h1>
-
-      <section className="task-sheet wiki-sheet min-w-0" aria-labelledby="wiki-list-title">
-        <div className="task-sheet-toolbar flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <WikiIcon className="size-4" aria-hidden="true" />
-            <h2 id="wiki-list-title">Wiki pages</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="task-sheet-count tabular-nums">{visible.length} pages</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<RefreshCw />}
-              aria-label="Refresh wiki pages"
-              onClick={() => void refresh()}
-            >
-              Refresh
-            </Button>
-            <Button size="sm" icon={<Plus />} disabled={!canCreate} onClick={() => setCreateOpen(true)}>
-              New page
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
-          <div className="relative min-w-[200px] flex-1">
-            <Input
-              aria-label="Search pages by title"
-              placeholder="Search pages by title…"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="pr-8"
-            />
-            {query && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setQuery("")}
-                className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-          {labels.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <TagIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-              {labels.map((label) => (
-                <label
-                  key={label.id}
-                  className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  <Checkbox
-                    aria-label={`Filter by label ${label.name}`}
-                    checked={labelFilter.has(label.id)}
-                    onCheckedChange={(checked) => toggleLabel(label.id, Boolean(checked))}
-                  />
-                  <span>{label.name}</span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <ul className="divide-y divide-border">
-          {visible.map((page) => (
-            <li key={page.id}>
-              <button
-                type="button"
-                onClick={() => router.push(`/wiki/${page.id}`)}
-                className="flex w-full flex-col gap-2 px-3 py-3 text-start transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{page.title}</span>
-                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {page.labels.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">No labels</span>
-                    ) : (
-                      page.labels.map((label) => (
-                        <Badge key={label.id} variant="outline">
-                          {label.name}
-                        </Badge>
-                      ))
-                    )}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                  <Avatar size="sm" aria-hidden="true">
-                    <AvatarFallback>{initials(page.updatedByName ?? page.authorName)}</AvatarFallback>
-                  </Avatar>
-                  <span>{page.updatedByName ?? page.authorName ?? "Unknown"}</span>
-                  <span aria-hidden="true">·</span>
-                  <time dateTime={page.updatedAt}>{formatDate(page.updatedAt)}</time>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">
-                    {page.commentCount} comment{page.commentCount === 1 ? "" : "s"}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-          {visible.length === 0 && (
-            <li className="px-3 py-10 text-center">
-              <p>{pages.length === 0 ? "No wiki pages yet" : "No pages match those filters"}</p>
-              {canCreate && pages.length === 0 && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Create the first one with “New page”.
-                </p>
-              )}
-            </li>
-          )}
-        </ul>
-      </section>
-
-      <CreatePageDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        labels={labels}
-        onCreated={(page) => {
-          void refresh();
-          router.push(`/wiki/${page.id}`);
-        }}
-      />
-    </section>
-  );
-}
-
-function CreatePageDialog({
-  open,
-  onOpenChange,
-  labels,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  labels: WikiLabelResponse[];
-  onCreated: (page: WikiPageSummary) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [saving, setSaving] = useState(false);
-
-  function reset(): void {
-    setTitle("");
-    setSelected(new Set());
-  }
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    setSaving(true);
+  async function copyLink(page: WikiPageSummary) {
     try {
-      const response = await apiFetch("/api/wiki/pages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, labelIds: [...selected] }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(data.error || "Failed to create the page");
-        return;
-      }
-      toast.success(`Created ${data.page?.title ?? title}`);
-      reset();
-      onOpenChange(false);
-      if (data.page) onCreated(data.page);
+      await navigator.clipboard.writeText(`${window.location.origin}/wiki/${page.id}`);
+      toast.success("Page link copied");
     } catch {
-      toast.error("Network error. Please try again.");
-    } finally {
-      setSaving(false);
+      toast.error("Could not copy the link. Open the page and copy its address instead.");
     }
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        if (!value) reset();
-        onOpenChange(value);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New wiki page</DialogTitle>
-          <DialogDescription>
-            Give it a title — the editor opens straight after, labels and all.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="grid gap-4">
-          <div className="grid gap-1.5">
-            <label htmlFor="new-wiki-title" className="text-xs font-medium text-muted-foreground">
-              Title
-            </label>
-            <Input
-              id="new-wiki-title"
-              name="title"
-              value={title}
-              maxLength={200}
-              placeholder="Runbook: rotating credentials"
-              onChange={(event) => setTitle(event.target.value)}
-              required
-              autoFocus
-            />
+    <section aria-label="Wiki" className="wiki-list-workspace">
+      <h1 id="wiki-list-title" className="sr-only">Wiki pages</h1>
+      <Tabs value={view} onValueChange={(value) => setView(String(value))} className="wiki-list-tabs">
+        <div className="wiki-list-toolbar">
+          <TabsList variant="line" aria-label="Wiki page views">
+            <TabsTrigger value="all">All pages</TabsTrigger>
+            <TabsTrigger value="labeled">Labeled</TabsTrigger>
+            <TabsTrigger value="unlabeled">Unlabeled</TabsTrigger>
+          </TabsList>
+          <div className="wiki-list-controls">
+            <CollapsingSearch query={query} onQueryChange={setQuery} />
+            <Popover>
+              <PopoverTrigger render={<Button size="lg" variant="secondary" icon={<Filter />} aria-label="Filter by label" />}>
+                {selectedLabelCount ? `Labels · ${selectedLabelCount}` : "Filters"}
+              </PopoverTrigger>
+              <PopoverContent unstyled align="end" className="wiki-filter-popover">
+                <PopoverTitle className="sr-only">Filter wiki pages by label</PopoverTitle>
+                <FilterMenu title="Filters" groups={labelGroups} value={filters} onChange={setFilters} />
+              </PopoverContent>
+            </Popover>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button size="lg" variant="secondary"
+                icon={sortDir === "asc" ? <ArrowUp /> : <ArrowDown />} aria-label="Sort wiki pages" />}>
+                {SORT_KEY_LABELS[sortKey]}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="wiki-sort-menu">
+                <DropdownMenuRadioGroup value={sortKey} onValueChange={(value) => setSortKey(value as SortKey)}>
+                  <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="created">Date created</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={sortDir} onValueChange={(value) => setSortDir(value as SortDir)}>
+                  <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {canCreate && <Button size="lg" icon={<Plus />} loading={creating} disabled={creating} onClick={() => void createPage()}>New page</Button>}
           </div>
-          {labels.length > 0 && (
-            <div className="grid gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Labels</span>
-              <div className="flex flex-wrap gap-3 rounded-lg border border-border p-3">
-                {labels.map((label) => (
-                  <label
-                    key={label.id}
-                    className="flex cursor-pointer items-center gap-1.5 text-xs"
-                  >
-                    <Checkbox
-                      aria-label={`Label ${label.name}`}
-                      checked={selected.has(label.id)}
-                      onCheckedChange={(checked) =>
-                        setSelected((previous) => {
-                          const next = new Set(previous);
-                          if (checked) next.add(label.id);
-                          else next.delete(label.id);
-                          return next;
-                        })
-                      }
-                    />
-                    <span>{label.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button type="button" size="lg" variant="secondary" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" size="lg" loading={saving} disabled={!title.trim()}>
-              Create page
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </div>
+        <TabsContent value={view} className="wiki-list-panel">
+          <ul aria-label="Wiki pages" className="wiki-page-list">
+            {visible.map((page) => (
+              <li key={page.id} className="wiki-page-row">
+                <Link href={`/wiki/${page.id}`} className="wiki-page-link">
+                  <span className="wiki-page-icon" aria-hidden="true"><FileDoc className="size-4" /></span>
+                  <span className="wiki-page-name">{page.title}</span>
+                </Link>
+                <div className="wiki-page-actions">
+                  <span title={`Last edited by ${page.updatedByName ?? page.authorName ?? "Unknown"}`}>
+                    <Avatar size="sm" aria-label={`Last edited by ${page.updatedByName ?? page.authorName ?? "Unknown"}`}>
+                      <AvatarFallback>{initials(page.updatedByName ?? page.authorName)}</AvatarFallback>
+                    </Avatar>
+                  </span>
+                  <span className="wiki-page-divider" aria-hidden="true" />
+                  <Button size="sm" variant="ghost" icon={<Info />} aria-label={`Page info: ${page.title}`}
+                    title={`Created on ${formatDate(page.createdAt)}`}
+                    onClick={() => setInfoPage(page)} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<Button size="sm" variant="ghost" icon={<MoreHorizontal />}
+                      aria-label={`More actions: ${page.title}`} />} />
+                    <DropdownMenuContent align="end" className="min-w-40">
+                      <DropdownMenuItem render={<Link href={`/wiki/${page.id}`} />}><FileDoc />Open page</DropdownMenuItem>
+                      <DropdownMenuItem render={<Link href={`/wiki/${page.id}`} target="_blank" rel="noopener noreferrer" />}><ExternalLink />Open in new tab</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void copyLink(page)}><Copy />Copy link</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setInfoPage(page)}><Info />Page info</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </li>
+            ))}
+            {visible.length === 0 && (
+              <li className="wiki-list-empty">
+                <FileDoc className="size-6 text-muted-foreground" aria-hidden="true" />
+                <p>{pages.length === 0 ? "No wiki pages yet" : "No pages match those filters"}</p>
+                {pages.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{canCreate ? "Create your first page with New page." : "Pages shared with this workspace will appear here."}</p>
+                ) : <Button size="sm" variant="secondary" onClick={() => { setQuery(""); setFilters({}); setView("all"); }}>Reset filters</Button>}
+              </li>
+            )}
+          </ul>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={infoPage !== null} onOpenChange={(open) => { if (!open) setInfoPage(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Page info</DialogTitle>
+            <DialogDescription className="break-words">{infoPage?.title}</DialogDescription>
+          </DialogHeader>
+          {infoPage && <dl className="wiki-page-info">
+            <dt>Created by</dt><dd>{infoPage.authorName ?? "Unknown"}</dd>
+            <dt>Created</dt><dd><time dateTime={infoPage.createdAt}>{formatDate(infoPage.createdAt)}</time></dd>
+            <dt>Last edited by</dt><dd>{infoPage.updatedByName ?? infoPage.authorName ?? "Unknown"}</dd>
+            <dt>Date modified</dt><dd><time dateTime={infoPage.updatedAt}>{formatDate(infoPage.updatedAt)}</time></dd>
+            <dt>Comments</dt><dd className="tabular-nums">{infoPage.commentCount}</dd>
+            <dt>Labels</dt><dd className="flex flex-wrap gap-1">{infoPage.labels.length
+              ? infoPage.labels.map((label) => <Badge key={label.id} variant="outline">{label.name}</Badge>) : "No labels"}</dd>
+          </dl>}
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }

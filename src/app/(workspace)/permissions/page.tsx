@@ -9,7 +9,7 @@ import { toRoleResponse, type RoleResponse, type RoleRow } from "@/lib/roles";
 
 /**
  * The permissions matrix page (design §6): /roles' architecture — RSC first
- * paint + client island — but organized per role instead of as a table.
+ * paint + client island — with grouped permission rows and role columns.
  *
  * The gate is server-side AND load-bearing for the flight payload (the 2.1/2.2
  * pattern): `getSessionUser` + `roles.view` run BEFORE the roles query, so a
@@ -24,7 +24,7 @@ interface RoleListRow extends RoleRow {
 }
 
 /** The same roles × users aggregate GET /api/roles and /roles serve (epic 1's
- *  shape) — the selector's userCount hints come from it. */
+ *  shape) — the column headers' member counts come from it. */
 async function listRoles(): Promise<RoleResponse[]> {
   const result = await query<RoleListRow>(
     `SELECT r.key, r.name, r.description, r.permissions, r.is_system, r.created_at,

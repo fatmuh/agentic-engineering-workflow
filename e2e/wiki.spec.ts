@@ -46,21 +46,23 @@ test.describe("admin: create page, label, paragraph, comment", () => {
     }
   });
 
-  test("creates a page through the dialog and lands in the editor", async ({ page }) => {
+  test("creates an Untitled page immediately without a title dialog", async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.goto("/wiki");
 
     await expect(page.getByRole("heading", { name: "Wiki pages" })).toBeVisible();
 
     await page.getByRole("button", { name: "New page" }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("#new-wiki-title").fill(PAGE_TITLE);
-    await dialog.getByRole("button", { name: "Create page" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
-    await expect(page).toHaveURL(new RegExp(`/wiki/[0-9a-f-]{36}$`));
+    await expect(page).toHaveURL(new RegExp(`/wiki/[0-9a-f-]{36}\\?edit=true$`));
     createdPagePath = new URL(page.url()).pathname;
-    await expect(page.getByRole("link", { name: "All pages" })).toBeVisible();
+    await expect(page.getByLabel("Page title", { exact: true })).toHaveValue("Untitled");
+    await expect(page.getByRole("group", { name: "Formatting", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "All pages" })).toHaveCount(0);
+    for (const name of ["Save", "Cancel", "Preview", "Copy link", "Delete"]) {
+      await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+    }
   });
 
   test("edit mode: uploads disabled with a hint while the page stays editable", async ({ page }) => {
@@ -68,34 +70,67 @@ test.describe("admin: create page, label, paragraph, comment", () => {
     await login(page, ADMIN_EMAIL);
     await page.goto(createdPagePath);
 
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    // Existing pages open directly in edit mode for users with update permission.
+    await expect(page.getByLabel("Page title", { exact: true })).toBeVisible();
 
     // The unconfigured-storage contract: buttons disabled, reason visible —
     // and crucially the editor itself is NOT disabled.
-    const toolbar = page.getByRole("toolbar", { name: "Formatting" });
+    const toolbar = page.getByRole("group", { name: "Selection formatting", exact: true });
+    await expect(toolbar).not.toBeVisible();
+    await page.locator(".ProseMirror").fill(PARAGRAPH);
+    await page.keyboard.press("ControlOrMeta+a");
     await expect(toolbar).toBeVisible();
+    await page.keyboard.press("Alt+F10");
+    await expect(toolbar.getByLabel("Text style", { exact: true })).toBeFocused();
+    await toolbar.getByLabel("More formatting options", { exact: true }).click();
     await expect(toolbar.getByRole("button", { name: "Insert image (storage not configured)" })).toBeDisabled();
     await expect(toolbar.getByRole("button", { name: "Attach file (storage not configured)" })).toBeDisabled();
-    await expect(
-      page.getByText("Storage is not configured, so uploads are disabled")
-    ).toBeVisible();
-    await expect(
-      page.getByText("the page can still be written and saved")
-    ).toBeVisible();
+    await expect(toolbar.getByRole("button", { name: "Insert image (storage not configured)" }))
+      .toHaveAttribute("title", "Storage is not configured, so uploads are disabled");
+    await toolbar.getByLabel("More formatting options", { exact: true }).click();
+    await toolbar.getByRole("button", { name: "Bold", exact: true }).click();
+    await expect(page.locator(".ProseMirror strong")).toContainText(PARAGRAPH);
+
+    // Rename the default title in the editor; creation never asks for it.
+    await page.getByLabel("Page title", { exact: true }).fill(PAGE_TITLE);
 
     // Storage being absent never blocks writing.
     await page.locator(".ProseMirror").fill(PARAGRAPH);
 
-    // Label taxonomy is edited from the page: create one, it joins the draft.
+    // Slash menu: "/todo" filters the block options, Enter inserts a to-do
+    // list with a real checkbox the keystrokes then fill in.
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("/todo");
+    await expect(page.getByRole("option").filter({ hasText: "To-do list" })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.locator('.ProseMirror input[type="checkbox"]')).toHaveCount(1);
+    await page.keyboard.type("Ship the runbook");
+
+    // The reference starts with the details pane closed.
+    await page.getByRole("button", { name: "Show details panel", exact: true }).click();
+    // Label taxonomy lives in the right pane's Info tab.
+    await page.getByRole("tab", { name: "Info", exact: true }).click();
     await page.getByLabel("New label name").fill(LABEL_NAME);
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByText(LABEL_NAME).first()).toBeVisible();
 
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    // Poll persistence, not a transient toast: title, body, and labels all autosave.
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/wiki/pages/${createdPagePath.split("/").pop()}`);
+      const { page: saved } = await response.json();
+      return saved.title === PAGE_TITLE && JSON.stringify(saved.content).includes("Ship the runbook")
+        && saved.labels.some((label: { name: string }) => label.name === LABEL_NAME);
+    }).toBe(true);
+    await page.reload();
+    await expect(page.getByLabel("Page title", { exact: true })).toHaveValue(PAGE_TITLE);
+    await expect(page.locator('.ProseMirror[contenteditable="true"]')).toBeVisible();
+    await page.getByRole("tab", { name: "Info", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: `Label ${LABEL_NAME}`, exact: true })).toBeChecked();
 
-    // The saved document renders read-only, paragraph and label chip included.
+    // Reload retains the saved document and leaves it editable.
     await expect(page.locator(".wiki-prose")).toContainText(PARAGRAPH);
+    // Attachments live behind the pane's Assets tab.
+    await page.getByRole("tab", { name: "Assets", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Attachments" })).toBeVisible();
     await expect(
       page.getByText(
@@ -109,6 +144,9 @@ test.describe("admin: create page, label, paragraph, comment", () => {
     await login(page, ADMIN_EMAIL);
     await page.goto(createdPagePath);
 
+    // Comments live behind the pane's Comments tab.
+    await page.getByRole("button", { name: "Show details panel", exact: true }).click();
+    await page.getByRole("tab", { name: /Comments/ }).click();
     await page.getByLabel("Write a comment").fill(COMMENT_BODY);
     await page.getByRole("button", { name: "Comment", exact: true }).click();
 
@@ -140,16 +178,20 @@ test.describe("member: reads the page, offered none of the edit affordances", ()
     await login(page, MEMBER_EMAIL);
     await page.goto("/wiki");
 
-    // Search narrows the flat list to the created page.
+    // Search narrows the flat list to the created page (collapsed → expand).
+    await page.getByRole("button", { name: "Search pages" }).click();
     await page.getByLabel("Search pages by title").fill(`E2E Runbook ${STAMP}`);
-    const row = page.getByRole("button", { name: new RegExp(PAGE_TITLE) });
+    const row = page.getByRole("link", { name: PAGE_TITLE, exact: true });
     await expect(row).toBeVisible();
     await row.click();
 
     await expect(page).toHaveURL(createdPagePath);
     // The member can read everything the admin wrote.
     await expect(page.locator(".wiki-prose")).toContainText(PARAGRAPH);
+    await page.getByRole("button", { name: "Show details panel", exact: true }).click();
+    await page.getByRole("tab", { name: "Info", exact: true }).click();
     await expect(page.getByText(LABEL_NAME).first()).toBeVisible();
+    await page.getByRole("tab", { name: /Comments/ }).click();
     await expect(page.getByText(COMMENT_BODY)).toBeVisible();
   });
 
@@ -163,7 +205,7 @@ test.describe("member: reads the page, offered none of the edit affordances", ()
     // Everything the API would 403 is absent, not merely hidden.
     await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Formatting" })).toHaveCount(0);
     await expect(page.getByLabel("Write a comment")).toHaveCount(0);
     // Someone else's comment: no author retraction, no moderation button.
     await expect(

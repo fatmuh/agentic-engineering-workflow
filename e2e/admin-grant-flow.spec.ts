@@ -11,11 +11,12 @@ import {
  * End-to-end admin grant and revocation flow (epic 3 story 3).
  *
  * Verifies the full administrative loop across two isolated browser contexts:
- *   1. Admin creates custom role "E2E Reviewer" with [View Home, View users]
+ *   1. Admin creates custom role "E2E Reviewer" (metadata sheet), then grants
+ *      [View Home, View users] for it on /permissions
  *   2. Admin adds a second user assigned to "E2E Reviewer" via the UI
  *   3. Second user logs in (Context B) and accesses /users successfully
  *   4. Admin toggles an additional grant ("View Watching") on /permissions
- *   5. /roles reflects the updated resolved permission count (3)
+ *   5. The grant persists: /permissions still shows it checked, /roles the user
  *   6. Admin revokes "View users" from the role on /permissions
  *   7. Second user's next /api/users request immediately answers 403 (fresh
  *      server-side resolution) while their client state remains stale
@@ -65,31 +66,38 @@ test.describe("Admin role lifecycle and grant revocation flow", () => {
     }
   });
 
-  test("1. Admin creates custom role 'E2E Reviewer' with View Home and View users", async () => {
+  test("1. Admin creates custom role 'E2E Reviewer', then grants View Home and View users", async () => {
     await pageA.goto("/roles");
 
+    // The create sheet collects metadata only — grants are managed on /permissions.
     await pageA.getByRole("button", { name: "New role" }).click();
     await expect(pageA.getByRole("heading", { name: "Create a role" })).toBeVisible();
 
-    await pageA.locator("#new-role-name").fill("E2E Reviewer");
-    await pageA.locator("#new-role-description").fill("Custom reviewer role for E2E tests");
-
-    const homeCheckbox = pageA.getByRole("checkbox", { name: "View Home" });
-    await homeCheckbox.click();
-    await expect(homeCheckbox).toBeChecked();
-
-    const usersCheckbox = pageA.getByRole("checkbox", { name: "View users" });
-    await usersCheckbox.click();
-    await expect(usersCheckbox).toBeChecked();
+    const createSheet = pageA.getByRole("dialog");
+    await createSheet.getByLabel("Name", { exact: true }).fill("E2E Reviewer");
+    await createSheet.getByLabel("Description", { exact: true }).fill("Custom reviewer role for E2E tests");
 
     await pageA.getByRole("button", { name: "Create role" }).click();
     await expect(pageA.getByText(/Created E2E Reviewer/i)).toBeVisible();
 
     const roleRow = pageA.getByRole("row").filter({ hasText: ROLE_KEY });
     await expect(roleRow).toBeVisible();
-    await expect(roleRow.getByText("Custom", { exact: true })).toBeVisible();
     await expect(roleRow.getByRole("cell").nth(3)).toHaveText("0");
-    await expect(roleRow.locator("span.tabular-nums")).toHaveText("2");
+
+    // Grant the starting set on /permissions (deep-linked to the new role).
+    await pageA.goto(`/permissions?role=${ROLE_KEY}`);
+    const homeCheckbox = pageA.getByRole("checkbox", { name: "View Home for E2E Reviewer", exact: true });
+    await homeCheckbox.click();
+    await expect(homeCheckbox).toBeChecked();
+
+    const usersCheckbox = pageA.getByRole("checkbox", { name: "View users for E2E Reviewer", exact: true });
+    await usersCheckbox.click();
+    await expect(usersCheckbox).toBeChecked();
+
+    const saveButton = pageA.getByRole("button", { name: "Save permissions" });
+    await saveButton.click();
+    await expect(pageA.getByText("Permissions updated for E2E Reviewer")).toBeVisible();
+    await expect(saveButton).toBeDisabled();
   });
 
   test("2. Admin creates second user assigned to that role via /users UI", async () => {
@@ -130,15 +138,15 @@ test.describe("Admin role lifecycle and grant revocation flow", () => {
   test("4. Admin adds 'View Watching' grant to role on /permissions", async () => {
     await pageA.goto("/permissions");
 
-    await pageA.locator('[aria-labelledby="permissions-role-label"]').click();
-    const option = pageA.getByRole("option", { name: /E2E Reviewer/ });
-    await expect(option).toBeVisible();
-    await option.click();
+    await pageA.getByRole("button", { name: "Filter by role" }).click();
+    await pageA.getByRole("dialog", { name: "Filter permissions by role" })
+      .getByRole("checkbox", { name: "E2E Reviewer", exact: true }).click();
+    await pageA.keyboard.press("Escape");
 
-    await expect(pageA.getByText("E2E Reviewer", { exact: true })).toBeVisible();
-    await expect(pageA.getByText("Custom", { exact: true })).toBeVisible();
+    await expect(pageA.getByRole("columnheader", { name: /E2E Reviewer/ })).toBeVisible();
+    await expect(pageA.getByText("Custom role", { exact: true })).toBeVisible();
 
-    const watchingCheckbox = pageA.getByRole("checkbox", { name: "View Watching" });
+    const watchingCheckbox = pageA.getByRole("checkbox", { name: "View Watching for E2E Reviewer", exact: true });
     await watchingCheckbox.click();
     await expect(watchingCheckbox).toBeChecked();
 
@@ -150,24 +158,27 @@ test.describe("Admin role lifecycle and grant revocation flow", () => {
     await expect(saveButton).toBeDisabled();
   });
 
-  test("5. /roles reflects the updated permissions count of 3", async () => {
-    await pageA.goto("/roles");
+  test("5. Grant persists: /permissions keeps it checked and /roles shows the assigned user", async () => {
+    await pageA.goto(`/permissions?role=${ROLE_KEY}`);
+    await expect(
+      pageA.getByRole("checkbox", { name: "View Watching for E2E Reviewer", exact: true })
+    ).toBeChecked();
 
+    await pageA.goto("/roles");
     const roleRow = pageA.getByRole("row").filter({ hasText: ROLE_KEY });
     await expect(roleRow).toBeVisible();
     await expect(roleRow.getByRole("cell").nth(3)).toHaveText("1");
-    await expect(roleRow.locator("span.tabular-nums")).toHaveText("3");
   });
 
   test("6. Admin revokes 'View users' from role on /permissions", async () => {
     await pageA.goto("/permissions");
 
-    await pageA.locator('[aria-labelledby="permissions-role-label"]').click();
-    const option = pageA.getByRole("option", { name: /E2E Reviewer/ });
-    await expect(option).toBeVisible();
-    await option.click();
+    await pageA.getByRole("button", { name: "Filter by role" }).click();
+    await pageA.getByRole("dialog", { name: "Filter permissions by role" })
+      .getByRole("checkbox", { name: "E2E Reviewer", exact: true }).click();
+    await pageA.keyboard.press("Escape");
 
-    const usersCheckbox = pageA.getByRole("checkbox", { name: "View users" });
+    const usersCheckbox = pageA.getByRole("checkbox", { name: "View users for E2E Reviewer", exact: true });
     await expect(usersCheckbox).toBeChecked();
     await usersCheckbox.click();
     await expect(usersCheckbox).not.toBeChecked();
@@ -179,12 +190,11 @@ test.describe("Admin role lifecycle and grant revocation flow", () => {
     await expect(usersCheckbox).not.toBeChecked();
     await expect(saveButton).toBeDisabled();
 
-    // Verify /roles reflects count back to 2
-    await pageA.goto("/roles");
-    const roleRow = pageA.getByRole("row").filter({ hasText: ROLE_KEY });
-    await expect(roleRow).toBeVisible();
-    await expect(roleRow.getByRole("cell").nth(3)).toHaveText("1");
-    await expect(roleRow.locator("span.tabular-nums")).toHaveText("2");
+    // The revoked grant stays revoked on a fresh load.
+    await pageA.goto(`/permissions?role=${ROLE_KEY}`);
+    await expect(
+      pageA.getByRole("checkbox", { name: "View users for E2E Reviewer", exact: true })
+    ).not.toBeChecked();
   });
 
   test("7. Second user gets immediate 403 on /api/users while client UI remains stale", async () => {
