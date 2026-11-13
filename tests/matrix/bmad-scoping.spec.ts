@@ -152,6 +152,29 @@ test("composite key: the same task id lives independently in two projects", asyn
   }
 });
 
+test("batch: tasks sent without an id each get their own row", async () => {
+  const project = await createProject({
+    name: fixtureName("Batch Ids"),
+    workspacePath: "/tmp/matrix-bmad-scoping-batch-ids",
+  });
+  // The MCP client sends tasks without ids and lets the server assign them,
+  // and several agents can post at once. An id built from the clock alone
+  // repeats within one millisecond, and the upsert then overwrites the earlier
+  // task with the later one, while both requests answer 201.
+  const titles = Array.from({ length: 20 }, (_, i) => `Batch task ${i + 1}`);
+  const responses = await Promise.all(
+    titles.map((title) =>
+      api(`/api/projects/${project.id}/tasks/batch`, { method: "POST", cookie, body: [{ title }] }),
+    ),
+  );
+  const ids = responses.map((response) => (expectStatus(response, 201).body as { id: string }[])[0]?.id);
+
+  expect(new Set(ids).size).toBe(titles.length);
+  const list = expectStatus(await api(`/api/projects/${project.id}/tasks`, { cookie }), 200)
+    .body as { title: string }[];
+  expect(list.map((task) => task.title).sort()).toEqual([...titles].sort());
+});
+
 test("cascade: deleting a task deletes its own project's nodes and nobody else's", async () => {
   const projectA = await createProject({
     name: fixtureName("Cascade A"),
