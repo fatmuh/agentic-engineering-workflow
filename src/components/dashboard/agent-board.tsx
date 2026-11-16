@@ -98,11 +98,8 @@ export function AgentTaskCard({
         onClick={() => onToggle(task.id)}
         className="flex w-full min-w-0 cursor-pointer flex-col items-stretch gap-1.5 rounded-[10px] p-3 text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
-        <span className="flex min-w-0 items-start gap-2">
-          <Sparkles className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">{task.title}</span>
-        </span>
-        <span className="min-w-0 text-[13px] leading-normal text-muted-foreground [overflow-wrap:anywhere]">{task.description}</span>
+        <span className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">{task.title}</span>
+        <span className={cn("min-w-0 text-sm leading-normal text-muted-foreground [overflow-wrap:anywhere]", !open && "line-clamp-3")}>{task.description}</span>
         <span className="mt-0.5 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
           <AgentTaskStatus state={task.state} duration={task.duration} />
           <span className="flex shrink-0 items-center gap-3">
