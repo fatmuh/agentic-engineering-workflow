@@ -1,0 +1,36 @@
+- id: "1"
+  title: Fondasi schema v6 + primitif token MCP
+  description: >-
+    Blok schema v6 di src/lib/db.ts (oauth_codes + oauth_refresh_tokens, idempotent
+    mengikuti pola v3/v4/v5) dan primitif JWT MCP audience bmad-mcp di src/lib/jwt.ts.
+    Fondasi CAP-2/CAP-3/CAP-4; rincian kolom di companion brownfield.md.
+  invoke_dev_with: >-
+    Jalankan dev server dua kali (fresh + existing DB) membuktikan blok v6 idempotent;
+    tanpa test otomatis; tampilkan diff tanpa commit.
+- id: "2"
+  title: Halaman persetujuan /oauth/authorize
+  description: >-
+    Halaman persetujuan GET /oauth/authorize bergaya auth-shell: gerbang sesi web,
+    gerbang status Active, tombol Authorize/Tolak dengan redirect loopback callback.
+    Menutup CAP-1; semantik parameter dan error di companion oauth-endpoints.md.
+  invoke_dev_with: >-
+    Verifikasi manual tiga cabang: tanpa sesi (redirect /login berikut next),
+    non-Active (pesan allowance tanpa code), Authorize vs Tolak (error=access_denied).
+- id: "3"
+  title: POST /api/oauth/token dua grant
+  description: >-
+    Endpoint token untuk grant authorization_code (PKCE S256, konsumsi code atomik)
+    dan refresh_token (rotasi + deteksi reuse + revoke saat non-Active). Menutup
+    CAP-2 dan CAP-3; urutan validasi dan format error di companion oauth-endpoints.md.
+  invoke_dev_with: >-
+    Uji end-to-end dengan binary Go asli bmad-monitor (login + refresh lewat klien,
+    bukan unit test); tampilkan diff tanpa commit.
+- id: "4"
+  title: Bearer dual-auth REST BMad
+  description: >-
+    Verifikator Bearer aud=bmad-mcp dipasang di /api/projects/** dan /api/llm-providers
+    berdampingan jalur cookie sesi web. Menutup CAP-4; inventaris endpoint dan konsumen
+    cookie di companion brownfield.md.
+  invoke_dev_with: >-
+    Buka Agent Board di browser memastikan jalur cookie tetap hidup setelah kunci
+    Bearer dipasang; Bearer berisi token web (tanpa aud bmad-mcp) harus 401.

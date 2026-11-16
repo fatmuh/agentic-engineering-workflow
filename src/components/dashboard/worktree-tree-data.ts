@@ -1,7 +1,16 @@
 import type { AgentTaskState } from "./agent-board-data";
+import type { BMadAgentTreeNode } from "@/lib/bmad";
 
 export type WorktreeAvatar = "claude" | "gemini" | "openai";
 export type WorktreeTool = "slack" | "notion" | "github" | "figma" | "stripe" | "hubspot";
+
+export interface WorktreeTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  totalTokens: number;
+}
 
 export type WorktreeNode = {
   id: string;
@@ -9,11 +18,83 @@ export type WorktreeNode = {
   model: string;
   state: AgentTaskState;
   task: string;
-  cost: string;
+  cost?: string;
+  tokenUsage?: WorktreeTokenUsage;
   time: string;
   avatar: WorktreeAvatar;
   tools: WorktreeTool[];
+  artifacts?: string[];
   children?: WorktreeNode[];
+};
+
+export function formatTokens(num: number): string {
+  if (!num) return "0 tokens";
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M tokens`;
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}k tokens`;
+  return `${num} tokens`;
+}
+
+export function bmadNodeToWorktreeNode(node: BMadAgentTreeNode): WorktreeNode {
+  let state: AgentTaskState = "running";
+  if (node.status === "completed") state = "done";
+  else if (node.status === "failed") state = "failed";
+  else if (node.status === "waiting_approval") state = "waiting";
+
+  const providerLower = (node.modelUsed?.provider || "").toLowerCase();
+  const modelIdLower = (node.modelUsed?.modelId || "").toLowerCase();
+
+  let avatar: WorktreeAvatar = "claude";
+  if (providerLower.includes("openai") || modelIdLower.includes("gpt")) avatar = "openai";
+  else if (providerLower.includes("gemini") || modelIdLower.includes("gemini")) avatar = "gemini";
+
+  const seconds = Math.round((node.durationMs || 0) / 1000);
+  const timeFormatted = seconds > 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+
+  const validTools: WorktreeTool[] = ["slack", "notion", "github", "figma", "stripe", "hubspot"];
+  const tools = (node.tools || ["github"]).filter((t): t is WorktreeTool => validTools.includes(t as WorktreeTool));
+
+  return {
+    id: node.id,
+    agent: node.name,
+    model: node.modelUsed?.modelId || "BMad Agent",
+    state,
+    task: node.action || "No action recorded",
+    tokenUsage: node.tokenUsage,
+    time: timeFormatted,
+    avatar,
+    tools: tools.length > 0 ? tools : ["github"],
+    artifacts: node.artifacts || [],
+    children: node.children?.map(bmadNodeToWorktreeNode),
+  };
+}
+
+/** Screenshot-matching local fixture; compact BMad sprint (2 branches) for layout checks. */
+export const bmadWorktreeRun: WorktreeNode = {
+  id: "bmad-orchestrator", agent: "BMad Master Orchestrator", model: "claude-opus-5-5",
+  state: "running", task: "Mengkoordinasikan analisis arsitektur dan eksekusi task sprint",
+  cost: "21.6k tokens", time: "1m 36s", avatar: "claude", tools: ["github", "notion"],
+  children: [
+    {
+      id: "bmad-analyst", agent: "BMad Analyst", model: "claude-sonnet-5-5",
+      state: "running", task: "Menganalisis file context docs/PRD.md dan mengidentifikasi dependensi domain",
+      cost: "14.6k tokens", time: "54s", avatar: "claude", tools: ["github"],
+    },
+    {
+      id: "bmad-architect", agent: "BMad Architect", model: "claude-sonnet-5-5",
+      state: "waiting", task: "Menyiapkan rancangan solusi arsitektur dan security gates",
+      cost: "11.0k tokens", time: "36s", avatar: "claude", tools: ["github", "figma"],
+      children: [{
+        id: "bmad-developer", agent: "BMad Developer", model: "claude-haiku-5-5",
+        state: "done", task: "Slicing komponen UI dan menyatukan telemetri token usage",
+        cost: "7.8k tokens", time: "28s", avatar: "claude", tools: ["github", "stripe"],
+        children: [{
+          id: "bmad-qa", agent: "BMad QA Engineer", model: "claude-haiku-5-5",
+          state: "running", task: "Menjalankan skenario verifikasi e2e permission gate dan kanban stage",
+          cost: "5.0k tokens", time: "27s", avatar: "claude", tools: ["github"],
+        }],
+      }],
+    },
+  ],
 };
 
 /** Static demo matching the Agent Tree preview; no agents execute. */

@@ -20,6 +20,13 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+
+## Deploying
+
+The schema bootstraps itself on first request. Read `docs/deployment.md` before
+a deploy that could run two versions at once — the bootstrap lock only works
+between builds that both take it.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

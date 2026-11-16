@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+
 SCRIPT = Path(__file__).resolve().parents[1] / "resolve_config.py"
 
 
@@ -24,7 +25,8 @@ class ResolveConfigCliTests(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, str(scripts / SCRIPT.name), "--help"],
                 text=True,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 check=False,
             )
 
@@ -40,12 +42,18 @@ class ResolveConfigCliTests(unittest.TestCase):
             root = Path(temp_dir)
             custom = root / "_bmad" / "custom"
             custom.mkdir(parents=True)
-            (root / "_bmad" / "config.toml").write_text('[core]\nname = "base"\nkeep = "yes"\n', encoding="utf-8")
+            (root / "_bmad" / "config.toml").write_text(
+                '[core]\nname = "base"\nkeep = "yes"\n', encoding="utf-8"
+            )
             (root / "_bmad" / "config.user.toml").write_text(
                 '[core]\nname = "base-user"\nstray = "ignored"\n', encoding="utf-8"
             )
-            (custom / "config.toml").write_text('[core]\nname = "team"\n', encoding="utf-8")
-            (custom / "config.user.toml").write_text('[core]\nname = "user"\n', encoding="utf-8")
+            (custom / "config.toml").write_text(
+                '[core]\nname = "team"\n', encoding="utf-8"
+            )
+            (custom / "config.user.toml").write_text(
+                '[core]\nname = "user"\n', encoding="utf-8"
+            )
 
             full = self._run(root)
             self.assertEqual(full.returncode, 0, msg=full.stderr)
@@ -82,7 +90,8 @@ class ResolveConfigCliTests(unittest.TestCase):
             env["PYTHONIOENCODING"] = "cp1252"
             result = subprocess.run(
                 [sys.executable, str(SCRIPT), "--project-root", str(root)],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 env=env,
                 check=False,
             )
@@ -100,7 +109,8 @@ class ResolveConfigCliTests(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--project-root", str(root), *args],
             text=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             check=False,
         )
 

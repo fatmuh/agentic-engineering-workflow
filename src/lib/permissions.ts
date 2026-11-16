@@ -28,6 +28,10 @@ type NavPageId = (typeof ALL_PAGES)[number]["id"] | "watching";
  *  them by literal) while still checking the same shape as before. */
 const EXTRA_RESOURCES = [
   { resource: "roles", verbs: ["view", "manage"] },
+  // Provider registry (the awm_provider_* tools): no dedicated page, the
+  // switcher-style admin surface lives on /providers. `manage` is what gates
+  // registering a provider, i.e. writing an API key into the database.
+  { resource: "providers", verbs: ["view", "manage"] },
 ] as const satisfies ReadonlyArray<{ resource: string; verbs: readonly Verb[] }>;
 
 /** Nav pages that render another resource's permissions and own no verbs of
@@ -73,6 +77,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   users: "Users",
   storage: "Storage",
   roles: "Roles",
+  providers: "LLM Providers",
 };
 
 export interface ResourceGroup {
@@ -125,6 +130,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "storage.manage": "Manage storage settings",
   "roles.view": "View roles & permissions",
   "roles.manage": "Manage roles & permissions",
+  "providers.view": "View LLM providers",
+  "providers.manage": "Register and update LLM providers",
 };
 
 /** Sidebar/page gate for a nav page id. Default `${id}.view`; the matrix page

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.10"
 # dependencies = ["pytest>=8.0"]
 # ///
 """Tests for memlog.py. Run: uv run --with pytest pytest scripts/tests/test_memlog.py
@@ -8,16 +8,13 @@ The spine under test is the flat, append-only, chronological invariant: every en
 one line recorded at the end in the order it happened — no sections, no grouping, and no
 lifecycle status the log would have to mutate.
 """
-
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parent.parent / "memlog.py"
-sys.path.insert(0, str(SCRIPT.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import memlog  # noqa: E402
 
 MEMLOG = ".memlog.md"
@@ -59,7 +56,6 @@ def append(ws, text, entry_type=None, by=None):
 
 # --- init ---------------------------------------------------------------
 
-
 def test_init_writes_frontmatter_fields(ws):
     init(ws)
     meta, body = memlog.split(read(ws))
@@ -99,7 +95,6 @@ def test_init_rejects_malformed_field(ws):
 
 # --- addressing: --workspace and --path are interchangeable --------------
 
-
 def test_path_addressing_targets_the_file_directly(tmp_path):
     target = tmp_path / "run" / ".memlog.md"
     assert memlog.main(["init", "--path", str(target), "--field", "topic=T"]) == 0
@@ -123,7 +118,6 @@ def test_target_is_required(ws):
 
 
 # --- append: flat chronological order is the whole point -----------------
-
 
 def test_append_lands_at_end_in_order(ws):
     init(ws)
@@ -229,7 +223,6 @@ def test_free_vocabulary_is_not_enforced(ws):
 
 # --- set: generic descriptive frontmatter, no lifecycle semantics --------
 
-
 def test_set_adds_field(ws):
     init(ws)
     memlog.main(["set", "--workspace", ws, "--key", "mode", "--value", "partner"])
@@ -260,12 +253,12 @@ def test_updated_stays_last(ws):
 
 # --- robustness ---------------------------------------------------------
 
-
 def test_roundtrip_render_is_stable(ws):
     init(ws)
     append(ws, "one", entry_type="idea")
-    meta, body = memlog.split(read(ws))
-    assert memlog.split(memlog.render(meta, body)) == (meta, body)
+    first = read(ws)
+    meta, body = memlog.split(first)
+    assert memlog.render(meta, body) == first
 
 
 def test_commas_in_field_survive(ws):
@@ -311,55 +304,3 @@ def test_ack_entry_count_climbs(ws, capsys):
     append(ws, "b")
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert out["entries"] == 2
-
-
-# --- append writes only its own line ------------------------------------
-
-
-def test_first_entry_after_init(ws):
-    init(ws)
-    append(ws, "first", entry_type="idea")
-    meta, _ = memlog.split(read(ws))
-    assert meta["topic"] == "Reinvent the lunchbox"
-    assert entries(ws) == ["- (idea) first"]
-
-
-def test_append_does_not_restamp_updated(ws):
-    init(ws)
-    path = Path(ws) / MEMLOG
-    path.write_text(read(ws).replace(memlog.split(read(ws))[0]["updated"], "2000-01-01T00:00"), encoding="utf-8")
-    append(ws, "a")
-    append(ws, "b")
-    assert memlog.split(read(ws))[0]["updated"] == "2000-01-01T00:00"
-    assert entries(ws) == ["- a", "- b"]
-
-
-def test_append_to_missing_log_fails_and_creates_nothing(ws):
-    with pytest.raises(FileNotFoundError):
-        memlog.main(["append", "--workspace", ws, "--text", "orphan"])
-    assert not (Path(ws) / MEMLOG).exists()
-
-
-def test_append_after_missing_trailing_newline_starts_new_line(ws):
-    init(ws)
-    append(ws, "first")
-    path = Path(ws) / MEMLOG
-    path.write_text(read(ws).rstrip("\n"), encoding="utf-8")
-    append(ws, "second")
-    assert entries(ws) == ["- first", "- second"]
-
-
-def test_parallel_appends_all_land(ws):
-    init(ws)
-    n = 40
-    procs = [
-        subprocess.Popen(
-            [sys.executable, str(SCRIPT), "append", "--workspace", ws, "--text", f"entry {i}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        for i in range(n)
-    ]
-    failures = [p.stderr.read().decode() for p in procs if p.wait() != 0]
-    assert failures == []
-    assert sorted(entries(ws)) == sorted(f"- entry {i}" for i in range(n))

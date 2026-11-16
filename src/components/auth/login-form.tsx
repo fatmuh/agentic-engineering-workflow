@@ -9,7 +9,7 @@ import { PasswordInput } from "./password-input";
 import { SocialAuthButtons } from "./social-auth-buttons";
 import { focusAuthField, validateAuthField, validateAuthForm, type AuthErrors } from "./validation";
 
-export function LoginForm() {
+export function LoginForm({ redirectTo = "/" }: { redirectTo?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,8 +52,15 @@ export function LoginForm() {
         return;
       }
       toast.success("Signed in successfully");
-      router.push("/");
-      router.refresh();
+      if (redirectTo && redirectTo !== "/") {
+        // Full-page navigation for cross-flow targets (e.g. the OAuth consent
+        // page): unlike router actions it works even when submitted before the
+        // client router finishes initializing on a slow-loading dev bundle.
+        window.location.assign(redirectTo);
+      } else {
+        router.push(redirectTo);
+        router.refresh();
+      }
     } catch {
       setFormError("Network error. Check your connection and try again.");
     } finally {
@@ -103,6 +110,9 @@ export function LoginForm() {
 
       {/* Email / Password Form */}
       <form onSubmit={handleSubmit} noValidate className="space-y-3.5">
+        {/* Survives a no-JS GET fallback submit: the next target stays in the
+            query string instead of being dropped (slow hydration on dev). */}
+        <input type="hidden" name="next" value={redirectTo} />
         <p role="alert" className="empty:hidden text-xs text-red-700 dark:text-red-300">{formError}</p>
         <AuthField label="Email address" htmlFor="email" error={errors.email}>
           <input

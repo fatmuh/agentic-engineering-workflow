@@ -3,15 +3,16 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
 const nextConfig: NextConfig = {
   // Dev via static Cloudflare tunnel or Tailscale
+  // (Tailscale MagicDNS hosts are machine.<tailnet>.ts.net — two labels, so
+  // only `**.ts.net` matches them; `*.ts.net` covers exactly one label.)
   allowedDevOrigins: [
     "*.mocci.web.id",
+    "**.mocci.web.id",
     "127.0.0.1",
     "localhost",
-    "127.0.0.1:3010",
-    "localhost:3010",
     "vesper.tailf6c5fc.ts.net",
-    "vesper.tailf6c5fc.ts.net:3010",
-    "*.ts.net",
+    "*.tail6bb223.ts.net",
+    "**.ts.net",
   ],
   cacheComponents: true,
   partialPrefetching: true,

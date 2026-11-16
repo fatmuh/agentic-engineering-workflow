@@ -9,38 +9,76 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BrightdeskMark } from "./icons";
+import type { ProjectStatus } from "./project-context";
+import { switcherCopy } from "./workspace-switcher-state";
 
 interface WorkspaceSwitcherProps {
   workspaces: { id: string; name: string; plan: string }[];
+  /** Active workspace's project id (names are labels and need not be unique). */
   value: string;
-  onChange: (name: string) => void;
-  onCreate: () => void;
+  onChange: (id: string) => void;
+  /** The project list's own state (`useActiveProject().status`). The trigger
+   *  reports it instead of rendering as an empty chip while `/api/projects` is
+   *  pending or failed; the menu's group label says the same thing. */
+  status: ProjectStatus;
+  /** Re-fetch the list after a failure. Rendered as a menu item only when the
+   *  list actually failed, so recovery never needs a full page reload. */
+  onRetry?: () => void;
   collapsed?: boolean;
 }
 
-export function WorkspaceSwitcher({ workspaces, value, onChange, onCreate, collapsed = false }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({
+  workspaces,
+  value,
+  onChange,
+  status,
+  onRetry,
+  collapsed = false,
+}: WorkspaceSwitcherProps) {
   const [open, setOpen] = useState(false);
+  const activeName = workspaces.find(workspace => workspace.id === value)?.name ?? "";
+  const copy = switcherCopy(status, workspaces.length, activeName);
+  // The group label carries the state note as well as the heading: Base UI
+  // renders `DropdownMenuLabel` as `aria-hidden` div and names the group with
+  // it (`aria-labelledby`), and a `<p>` is not valid content inside a menu
+  // group. One string keeps the visual note and the accessible name in step.
+  const groupLabel = copy.note ? `Ganti workspace · ${copy.note}` : "Ganti workspace";
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <style href="workspace-switcher-clean" precedence="default">{css}</style>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="md" className="workspace-switcher-trigger" aria-label={`Switch workspace, current ${value}`} icon={<BrightdeskMark />} iconRight={collapsed ? undefined : <ChevronDown />} />}>
-        {collapsed ? null : value}
+      {/* Never disabled: the menu still opens while the list loads or after it
+          failed, so a stale-but-usable entry stays reachable and the retry
+          item is reachable too. */}
+      <DropdownMenuTrigger render={<Button variant="ghost" size="md" className="workspace-switcher-trigger" aria-label={copy.label} icon={<BrightdeskMark />} iconRight={collapsed ? undefined : <ChevronDown />} />}>
+        {collapsed ? null : copy.trigger}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={4} className="workspace-switcher-menu">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
+          <DropdownMenuLabel className="workspace-switcher-label" data-state-note={copy.note ? "" : undefined}>
+            {groupLabel}
+          </DropdownMenuLabel>
           <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
             {workspaces.map(workspace => (
-              <DropdownMenuRadioItem key={workspace.id} value={workspace.name} closeOnClick onClick={() => setOpen(false)}>
+              <DropdownMenuRadioItem key={workspace.id} value={workspace.id} closeOnClick onClick={() => setOpen(false)}>
                 <span className="workspace-switcher-mark" aria-hidden="true">{workspace.name.slice(0, 1)}</span>
                 <span className="workspace-switcher-details"><span>{workspace.name}</span><span className="workspace-switcher-plan">{workspace.plan}</span></span>
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
+        {(status === "error" && onRetry) && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem onClick={onRetry}>Coba lagi</DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled title="Workspace creation is unavailable in this demo" onClick={onCreate}><Plus data-icon="inline-start" /><span>Create workspace</span><span className="workspace-switcher-unavailable">Demo</span></DropdownMenuItem>
+          {/* Disabled, so it needs no callback: the item is the message, and
+              "Demo" is the visible half of the same sentence as its title. */}
+          <DropdownMenuItem disabled title="Pembuatan workspace belum tersedia di demo ini"><Plus data-icon="inline-start" /><span>Buat workspace</span><span className="workspace-switcher-unavailable">Demo</span></DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -61,6 +99,9 @@ const css = /* css */ `
 .workspace-switcher-menu [data-slot="dropdown-menu-label"] {
   padding: 6px 8px; font-size: .75rem; line-height: 1.5; font-weight: 500; color: var(--muted-foreground);
 }
+/* The state note is part of the label text; it is the only thing that may wrap
+   onto a second line, so it keeps the group heading's weight and colour. */
+.workspace-switcher-label[data-state-note] { font-weight: 400; overflow-wrap: anywhere; }
 .workspace-switcher-menu [data-slot="dropdown-menu-radio-item"] {
   min-height: 42px; padding-block: 5px; padding-inline: 8px 28px; gap: 8px;
   font-size: .8125rem; line-height: 1.4; cursor: pointer; color: var(--popover-foreground);

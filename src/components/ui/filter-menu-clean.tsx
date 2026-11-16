@@ -14,12 +14,13 @@ export type FilterMenuProps = {
   defaultOpen?: string[];
   title?: string;
   hints?: boolean;
+  selectionMode?: "multiple" | "single";
   className?: string;
 };
 type Row = { key: string; group: FilterGroup; gi: number; option?: FilterOption };
 const CHIP_GAP = 4;
 
-export function FilterMenu({ groups, value, defaultValue = {}, onChange, defaultOpen, title = "Filters", hints = true, className }: FilterMenuProps) {
+export function FilterMenu({ groups, value, defaultValue = {}, onChange, defaultOpen, title = "Filters", hints = true, selectionMode = "multiple", className }: FilterMenuProps) {
   const uid = useId();
   const [inner, setInner] = useState<FilterValue>(defaultValue);
   const picked = value ?? inner;
@@ -37,7 +38,7 @@ export function FilterMenu({ groups, value, defaultValue = {}, onChange, default
   };
   const toggle = (group: string, option: string) => {
     const current = pickedIn(group);
-    commit({ ...picked, [group]: current.includes(option) ? current.filter(id => id !== option) : [...current, option] });
+    commit({ ...picked, [group]: selectionMode === "single" ? [option] : current.includes(option) ? current.filter(id => id !== option) : [...current, option] });
   };
   const toggleGroup = (group: string) => setOpen(previous => {
     const next = new Set(previous);
@@ -112,9 +113,9 @@ export function FilterMenu({ groups, value, defaultValue = {}, onChange, default
       <style href="ui-filter-menu-clean" precedence="default">{css}</style>
       <div className="ui-fmc__head">
         <span className="ui-fmc__title" dir="auto" title={title}>{title}</span>
-        <Button size="sm" variant="ghost" className="ui-fmc__clear" disabled={!chips.length} onClick={() => commit({})}>Clear all</Button>
+        {selectionMode === "multiple" && <Button size="sm" variant="ghost" className="ui-fmc__clear" disabled={!chips.length} onClick={() => commit({})}>Clear all</Button>}
       </div>
-      <div className="ui-fmc__chips-outer" ref={chipsOuter}>
+      <div className="ui-fmc__chips-outer" ref={chipsOuter} hidden={selectionMode === "single"}>
         <div className="ui-fmc__chips" ref={chipsInner} data-empty={!chips.length || undefined} aria-live="polite">
           <div className="ui-fmc__measure" ref={measure} aria-hidden="true">
             {chips.map((chip, index) => <span key={index} className="ui-fmc__chip"><span className="ui-fmc__chip-label">{chip.label}</span><span className="ui-fmc__chip-x" /></span>)}
@@ -139,12 +140,12 @@ export function FilterMenu({ groups, value, defaultValue = {}, onChange, default
               <span className="ui-fmc__group-count">{group.options.length.toLocaleString("en-US")}</span>
               <span className="ui-fmc__group-picked" aria-live="polite">{count > 0 && <span key={count} className="ui-fmc__roll">{count} filter{count === 1 ? "" : "s"}</span>}</span>
             </Button>
-            <div className="ui-fmc__panel" id={`${uid}-${gi}`} role="group" aria-label={group.label} inert={!isOpen} aria-hidden={!isOpen}>
+            <div className="ui-fmc__panel" id={`${uid}-${gi}`} role={selectionMode === "single" ? "radiogroup" : "group"} aria-label={group.label} inert={!isOpen} aria-hidden={!isOpen}>
               <div className="ui-fmc__panel-inner">
                 {group.options.map((option, oi) => {
                   const key = `o:${gi}:${oi}`;
                   const on = pickedIn(group.id).includes(option.id);
-                  return <Button key={`${option.id}#${oi}`} variant="ghost" size="sm" role="checkbox" aria-checked={on} className="ui-fmc__option" data-key={key} tabIndex={isOpen && activeKey === key ? 0 : -1} onFocus={() => setFocus(key)} onClick={() => toggle(group.id, option.id)}>
+                  return <Button key={`${option.id}#${oi}`} variant="ghost" size="sm" role={selectionMode === "single" ? "radio" : "checkbox"} aria-checked={on} className="ui-fmc__option" data-key={key} tabIndex={isOpen && activeKey === key ? 0 : -1} onFocus={() => setFocus(key)} onClick={() => toggle(group.id, option.id)}>
                     <span className="ui-fmc__box" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m4.25 8.25 2.5 2.5 5-5.5" /></svg></span>
                     <span className="ui-fmc__option-label" dir="auto" title={option.label}>{option.label}</span>
                   </Button>;

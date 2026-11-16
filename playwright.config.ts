@@ -36,6 +36,10 @@ process.env.E2E_SCRATCH_DB_NAME = scratchDbName;
 export default defineConfig({
   testDir: "./e2e",
   globalTeardown: "./e2e/global-teardown.ts",
+  // Waits until the schema bootstrap has COMMITTED (it is one transaction since
+  // D-1, so nothing is visible to the specs' own pool until then). Playwright's
+  // webServer readiness is only GET /login, which does not touch the database.
+  globalSetup: "./e2e/global-setup.ts",
   reporter: [["list"]],
   use: { baseURL },
   projects: [

@@ -527,28 +527,29 @@ nextjs-portal,
    tokens with Board. Each t-acc controls only its direct panel. */
 .worktree-canvas {
   container-type: inline-size;
+  width: 100%;
+  min-width: 0;
   padding: 16px 20px 24px;
   border-radius: 12px;
   background: #fafafa;
   --worktree-line: #83b9ff;
   --worktree-card: #fff;
   --worktree-muted: #737373;
-  --worktree-subtle: #929292;
+  --worktree-subtle: #6b6b6b;
 }
 .dark .worktree-canvas {
   background: #161616;
   --worktree-line: #628fcc;
   --worktree-card: #202020;
   --worktree-muted: #b1b1b1;
-  --worktree-subtle: #999;
+  --worktree-subtle: #b1b1b1;
 }
 .worktree-tree {
-  --worktree-card-width: min(216px, calc((100cqw - 112px) / 3));
-  width: min(728px, calc(100% - 32px));
+  width: min(calc(var(--worktree-column-count, 3) * 288px - 40px), 100%);
   margin-inline: auto;
   list-style: none;
 }
-.worktree-node { position: relative; list-style: none; outline: none; }
+.worktree-node { position: relative; min-width: 0; list-style: none; outline: none; }
 .worktree-node:focus-visible > .worktree-card {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
@@ -557,10 +558,9 @@ nextjs-portal,
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto 1fr auto;
-  column-gap: 4px;
-  width: var(--worktree-card-width);
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
   min-height: 112px;
   padding: 10px;
   border-radius: 10px;
@@ -568,7 +568,7 @@ nextjs-portal,
   box-shadow: 0 0 0 1px rgb(0 0 0 / 5%), 0 1px 2px rgb(0 0 0 / 5%);
 }
 .dark .worktree-card { box-shadow: 0 0 0 1px rgb(255 255 255 / 8%), 0 1px 2px rgb(0 0 0 / 20%); }
-.worktree-root > .worktree-card { margin-inline: auto; }
+.worktree-root > .worktree-card { max-width: 248px; margin-inline: auto; }
 .worktree-avatar {
   display: grid;
   width: 24px;
@@ -585,10 +585,8 @@ nextjs-portal,
 .worktree-name, .worktree-model { overflow-wrap: anywhere; }
 .worktree-model, .worktree-fold { color: var(--worktree-subtle); }
 .worktree-status {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: start;
-  justify-self: end;
+  justify-self: start;
+  margin-block-start: 6px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -598,9 +596,9 @@ nextjs-portal,
   line-height: 1.273;
   white-space: nowrap;
 }
-.worktree-status-running { color: #087ce8; background: #e6f3ff; }
-.worktree-status-waiting { color: #c74b00; background: #fff0d9; }
-.worktree-status-done { color: #078735; background: #e6f6eb; }
+.worktree-status-running { color: #066ac9; background: #e6f3ff; }
+.worktree-status-waiting { color: #b54700; background: #fff0d9; }
+.worktree-status-done { color: #06752e; background: #e6f6eb; }
 .worktree-status-failed { color: #c83232; background: #ffebeb; }
 .dark .worktree-status-running { color: #8dc6ff; background: #20354b; }
 .dark .worktree-status-waiting { color: #ffc084; background: #452e1d; }
@@ -642,10 +640,11 @@ nextjs-portal,
   .worktree-fold:hover { color: var(--foreground); background: var(--border); }
 }
 .worktree-children { position: relative; min-width: 0; }
-/* Reserve the descendants' 32px overhang without changing column alignment. */
+/* Only the shadow/focus ring may overhang the collapsing panel.
+   Descendant cards shrink within their own branch instead of escaping its clip. */
 .worktree-children > .t-acc-panel-inner {
-  margin-inline: -4px -36px;
-  padding-inline: 4px 36px;
+  margin-inline: -4px;
+  padding-inline: 4px;
 }
 .worktree-port {
   position: absolute;
@@ -664,7 +663,7 @@ nextjs-portal,
 .worktree-columns, .worktree-branches { padding-block-end: 4px; }
 .worktree-columns {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--worktree-column-count, 3), minmax(0, 1fr));
   column-gap: 40px;
   padding-top: 40px;
   list-style: none;
@@ -674,7 +673,8 @@ nextjs-portal,
   position: absolute;
   top: 0;
   inset-inline-start: 50%;
-  height: 40px;
+  /* Stop at the branch junction, halfway through the 40px row gap. */
+  height: 20px;
   border-inline-start: 1.5px solid var(--worktree-line);
 }
 .worktree-port, .worktree-root > .worktree-children::before {
@@ -728,7 +728,7 @@ nextjs-portal,
   border-end-start-radius: 7px;
 }
 @container (max-width: 699px) {
-  .worktree-tree { --worktree-card-width: min(13.5rem, calc(100cqw - 64px)); width: 100%; }
+  .worktree-tree { width: min(400px, 100%); }
   .worktree-root > .worktree-card { margin-inline: 0; }
   .worktree-root > .worktree-card > .worktree-port { inset-inline-start: 17px; }
   .worktree-root > .worktree-children::before { display: none; }
@@ -760,9 +760,7 @@ nextjs-portal,
   }
 }
 @container (max-width: 20rem) {
-  .worktree-tree { --worktree-card-width: calc(100cqw - 64px); }
-  .worktree-status { grid-column: 1 / -1; grid-row: auto; justify-self: start; margin-top: 6px; }
-  .worktree-card { height: auto; min-height: 112px; }
+  .worktree-columns, .worktree-branches { padding-inline-start: 16px; }
 }
 @media (forced-colors: active) {
   .worktree-card, .worktree-status, .worktree-avatar { border: 1px solid CanvasText; }

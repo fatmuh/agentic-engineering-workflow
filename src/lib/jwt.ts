@@ -7,6 +7,8 @@
  * Payloads:
  *   access:  { sub, email, role, type: "access" }
  *   refresh: { sub, jti, type: "refresh" }
+ *   MCP access:  { sub, email, role, type: "access", aud: "bmad-mcp" }
+ *   MCP refresh: { sub, jti, type: "refresh", aud: "bmad-mcp" }
  */
 import { SignJWT, jwtVerify, decodeJwt, errors } from "jose";
 
@@ -26,6 +28,19 @@ export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 
 /** Refresh tokens live 7 days and rotate on every use. */
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * Audience separating MCP tokens (bmad-monitor CLI, OAuth PKCE flow) from web
+ * session tokens. Web access tokens carry no `aud`, so requiring it here is
+ * what keeps the two populations from being interchangeable in either direction.
+ */
+export const MCP_AUDIENCE = "bmad-mcp";
+
+/** MCP access tokens live 30 days — contract: WEB_SPEC §1B `expires_in: 2592000`. */
+export const MCP_ACCESS_TOKEN_TTL_SECONDS = 2_592_000;
+
+/** MCP refresh tokens live 30 days and rotate on every use. */
+export const MCP_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const ISSUER = "onyx-auth";
 
@@ -144,6 +159,81 @@ export function decodeTokenClaims(
       jti: typeof decoded.jti === "string" ? decoded.jti : undefined,
       type: typeof decoded.type === "string" ? decoded.type : undefined,
     };
+  } catch {
+    return null;
+  }
+}
+
+// ---- MCP tokens (bmad-monitor CLI, OAuth PKCE) ----------------------------
+// Same HS256 key and issuer as the web pair; the `aud: "bmad-mcp"` claim is the
+// only separator. Verifiers below require it, so a web access/refresh token
+// planted as an MCP token is rejected (and vice versa: the web verifiers above
+// never see MCP tokens — they read cookies, a path MCP tokens never travel).
+
+export interface McpAccessTokenClaims {
+  sub: string;
+  email: string;
+  role: string;
+  type: "access";
+}
+
+export interface McpRefreshTokenClaims {
+  sub: string;
+  jti: string;
+  type: "refresh";
+}
+
+export async function signMcpAccessToken(user: {
+  id: string;
+  email: string;
+  role: string;
+}): Promise<string> {
+  return new SignJWT({ email: user.email, role: user.role, type: "access" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(user.id)
+    .setAudience(MCP_AUDIENCE)
+    .setIssuer(ISSUER)
+    .setIssuedAt()
+    .setExpirationTime(`${MCP_ACCESS_TOKEN_TTL_SECONDS}s`)
+    .sign(getSigningKey());
+}
+
+export async function signMcpRefreshToken(userId: string, jti: string): Promise<string> {
+  return new SignJWT({ type: "refresh" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setAudience(MCP_AUDIENCE)
+    .setIssuer(ISSUER)
+    .setJti(jti)
+    .setIssuedAt()
+    .setExpirationTime(`${MCP_REFRESH_TOKEN_TTL_SECONDS}s`)
+    .sign(getSigningKey());
+}
+
+/** Verify an MCP access JWT (signature, issuer, audience, expiry). */
+export async function verifyMcpAccessToken(token: string): Promise<McpAccessTokenClaims | null> {
+  try {
+    const { payload } = await jwtVerify(token, getSigningKey(), {
+      issuer: ISSUER,
+      audience: MCP_AUDIENCE,
+    });
+    if (payload.type !== "access" || typeof payload.sub !== "string") return null;
+    return payload as unknown as McpAccessTokenClaims;
+  } catch {
+    return null;
+  }
+}
+
+/** Verify an MCP refresh JWT (signature, issuer, audience, expiry). */
+export async function verifyMcpRefreshToken(token: string): Promise<McpRefreshTokenClaims | null> {
+  try {
+    const { payload } = await jwtVerify(token, getSigningKey(), {
+      issuer: ISSUER,
+      audience: MCP_AUDIENCE,
+    });
+    if (payload.type !== "refresh" || typeof payload.sub !== "string") return null;
+    if (typeof payload.jti !== "string" || !payload.jti) return null;
+    return payload as unknown as McpRefreshTokenClaims;
   } catch {
     return null;
   }

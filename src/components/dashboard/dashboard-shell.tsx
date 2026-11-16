@@ -10,6 +10,8 @@ import { AppSidebar } from "./app-sidebar";
 import { CommandPalette } from "./command-palette";
 import { ThemeToggle } from "./theme-toggle";
 import { PermissionProvider, usePermission } from "./permission-provider";
+import { ProjectProvider } from "./project-context";
+import { AnnouncementProvider } from "./announcement-context";
 import { ALL_PAGES, workspaceHref, type WorkspaceRoute } from "./navigation";
 
 function DashboardContent({ route, children }: { route: WorkspaceRoute; children: ReactNode }) {
@@ -76,11 +78,23 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   return (
     <PermissionProvider>
-      <SidebarProvider defaultOpen className="flex h-dvh w-full overflow-hidden bg-[#f5f5f5] dark:bg-[#09090b]">
-        <AppSidebar currentRoute={route} onNavigate={handleNavigate} onOpenCommand={() => setIsCommandOpen(true)} />
-        <DashboardContent route={route}>{children}</DashboardContent>
-        <CommandPalette open={isCommandOpen} onOpenChange={setIsCommandOpen} onNavigate={handleNavigate} />
-      </SidebarProvider>
+      {/* Above the sidebar and the page content: a workspace switch is
+          announced through the shell's live region, and the sidebar that
+          performs the switch is a sibling of the page it changes. */}
+      <AnnouncementProvider>
+        {/* Above the SidebarProvider too: the active project is shared state
+            between the sidebar's switcher and the page content (Agent Board),
+            so it must live above both. It sits INSIDE AnnouncementProvider
+            because a `storage`-driven workspace switch is announced from here,
+            and the provider that writes must be above the one that announces. */}
+        <ProjectProvider>
+          <SidebarProvider defaultOpen className="flex h-dvh w-full overflow-hidden bg-[#f5f5f5] dark:bg-[#09090b]">
+            <AppSidebar currentRoute={route} onNavigate={handleNavigate} onOpenCommand={() => setIsCommandOpen(true)} />
+            <DashboardContent route={route}>{children}</DashboardContent>
+            <CommandPalette open={isCommandOpen} onOpenChange={setIsCommandOpen} onNavigate={handleNavigate} />
+          </SidebarProvider>
+        </ProjectProvider>
+      </AnnouncementProvider>
     </PermissionProvider>
   );
 }

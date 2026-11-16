@@ -71,6 +71,12 @@ export async function seedUser(user: SeedUserInput): Promise<void> {
 
 /**
  * Log in as a user via the UI and wait until redirected to the root dashboard.
+ *
+ * A login that silently stays on `/login` makes every downstream assertion
+ * report "element(s) not found", which reads like a product bug in whatever
+ * the test was actually about. When the redirect does not happen, the message
+ * therefore carries the final URL and the visible error text, so the cause is
+ * in the failure rather than in a later locator timeout.
  */
 export async function login(
   page: Page,
@@ -81,7 +87,20 @@ export async function login(
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  try {
+    await expect(page).toHaveURL(/\/$/)
+  } catch {
+    // Best-effort context: whatever the page says about why it is still here.
+    const visible = await page
+      .locator("body")
+      .innerText()
+      .then(text => text.replace(/\s+/g, " ").trim().slice(0, 300))
+      .catch(() => "<body unavailable>")
+    throw new Error(
+      `E2E login failed for ${email}: still at ${page.url()}, expected /. ` +
+        `Visible page text: ${visible}`,
+    )
+  }
 }
 
 /**

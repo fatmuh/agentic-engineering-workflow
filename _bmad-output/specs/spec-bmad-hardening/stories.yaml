@@ -1,0 +1,94 @@
+- id: "1"
+  title: Fondasi test regresi BMad
+  description: >-
+    Spec matrix yang mengunci perilaku yang sekarang hanya diverifikasi manual: composite
+    key per project, cascade saat task dihapus, penolakan remote duplikat, resolusi
+    identitas get-or-create, dan isolasi board. Menutup CAP-3; harness tests/matrix sudah
+    menyediakan scratch DB dan getPool().
+  invoke_dev_with: >-
+    Setiap test harus gagal bila perilakunya dirusak - buktikan dengan menghapus
+    ON DELETE CASCADE pada bmad_agent_nodes.task_id dan mengembalikan ON CONFLICT (id)
+    di tasks/batch, pastikan npm run test:matrix merah, lalu pulihkan. Jangan menambah
+    framework test baru; pakai vitest.matrix.config.ts yang ada. Test harus lulus pada
+    scratch DB, tidak menyentuh database dev.
+
+- id: "2"
+  title: Backlog berfungsi penuh — schema dan tiga route
+  description: >-
+    Blok schema baru: bmad_backlogs mendapat promoted_to_task_id, promoted_by, promoted_at
+    dan berpindah ke PRIMARY KEY (project_id, id). Lalu tiga route backlog (list/create,
+    impact, promote) dengan guardBmadApi dan scoping projectId. Menutup CAP-2; bentuk
+    kolom dan aturan promote ada di migration-plan.md dan findings-map.md.
+  invoke_dev_with: >-
+    Promote WAJIB satu transaksi: task dibuat lalu backlog ditandai promoted, sehingga
+    tidak ada state backlog=promoted tanpa task. Idempoten: promote kedua mengembalikan
+    task yang sama. Klien Go mengharapkan respons KanbanTaskItem, bukan BacklogItem.
+    Migrasi bmad_backlogs ke composite key harus menangani FK turunan bila ada, dan
+    idempoten seperti blok v7. Verifikasi dengan binary Go asli di
+    /Users/adamramadhan/Projects/bmad-monitor-mcp, bukan hanya curl.
+
+- id: "3"
+  title: Identitas workspace case-fold dan tolak kredensial
+  description: >-
+    D-4: normalizeWorkspacePath mengembalikan path lowercase, dengan migrasi
+    bmad_projects.workspace_path dan peta workspaceProjects CLI. D-5: remote ber-kredensial
+    ditolak 400 pada create dan resolve, dan baris lama tidak membocorkan userinfo di
+    respons. Menutup CAP-4 dan CAP-5; aturan lengkap di migration-plan.md.
+  invoke_dev_with: >-
+    Keduanya mengubah kunci identitas, jadi digabung agar tidak ada dua migrasi kunci.
+    Selama transisi resolver harus menerima kunci lama DAN baru, jika tidak CLI versi lama
+    kehilangan project saat dashboard naik lebih dulu. Migrasi yang menemukan dua project
+    jatuh ke kunci sama harus BERHENTI dengan pesan menyebut keduanya - jangan menggabung
+    otomatis. Deteksi kredensial dilakukan pada nilai mentah SEBELUM normalisasi, karena
+    normalisasi justru membuang userinfo. Test dari story 1 harus tetap hijau setelah ini.
+
+- id: "4"
+  title: Bootstrap schema tahan multi-instance
+  description: >-
+    D-1: satu pg_advisory_xact_lock di seluruh ensureSchema, sehingga boot paralel tidak
+    gagal dan tidak menjalankan DDL ganda. Menutup CAP-1; alasan memilih lock di dalam kode
+    ada di findings-map.md.
+  invoke_dev_with: >-
+    Ini perubahan struktural, bukan satu baris: blok v2-v6 saat ini berjalan sebagai
+    pool.query() terpisah, sedangkan pg_advisory_xact_lock hanya hidup selama transaksi.
+    Seluruh ensureSchema harus memakai satu client dan satu BEGIN...COMMIT. Lock wajib
+    punya batas waktu tunggu agar instance kedua tidak menggantung bila instance pertama
+    macet. Buktikan dengan N>=4 proses boot bersamaan terhadap satu database, dan pastikan
+    test story 1 tetap hijau.
+
+- id: "5"
+  title: Board tahan balapan dan loadState terpisah
+  description: >-
+    D-7: token monotonik per request agar respons lama tidak menimpa yang lebih baru, dan
+    loadState dipisah untuk board dan agent-tree sehingga kegagalan satu tidak menandai
+    keduanya gagal. Menutup CAP-7.
+  invoke_dev_with: >-
+    Ikuti pola latestLoadRef yang sudah ada di permission-provider.tsx. Uji dengan menunda
+    satu respons fetch secara buatan: respons yang dimulai lebih dulu tidak boleh menimpa
+    yang lebih baru untuk project yang sama. Kegagalan agent-tree saja harus tetap
+    menampilkan daftar task yang berhasil dimuat.
+
+- id: "6"
+  title: Hapus data demo dan selesaikan Workspace Switcher
+  description: >-
+    D-6 + D-9: hapus demoAgentTasks, keluarkan demoWorktreeRun dari jalur render default
+    atau beri label eksplisit, tambahkan keadaan memuat/gagal/kosong pada switcher,
+    umumkan pergantian workspace, dan samakan bahasa menjadi Indonesia. Menutup CAP-6 dan
+    CAP-9.
+  invoke_dev_with: >-
+    demoWorktreeRun boleh tetap ada sebagai kontrol contoh, tapi tidak boleh muncul sebagai
+    keadaan bawaan tab dan harus berlabel eksplisit. Toast "Switched workspace to ..." masih
+    berbahasa Inggris sementara string lain Indonesia. Pengumuman pergantian workspace
+    harus masuk ke live region yang sudah ada, bukan toast saja.
+
+- id: "7"
+  title: Persistensi workspace antar-tab dan pemulihan
+  description: >-
+    D-8: dengarkan event storage agar beberapa tab menyinkronkan pilihan workspace, dan
+    hubungkan reload() ke afordans UI sehingga kegagalan memuat daftar project bisa
+    dipulihkan tanpa reload halaman penuh. Menutup CAP-8.
+  invoke_dev_with: >-
+    Hati-hati loop tulis-baca: dua tab yang saling menulis localStorage pada event storage
+    akan berosilasi. Tandai perubahan yang berasal dari tab lain agar tidak ditulis ulang.
+    reload() sudah diekspos di context tetapi belum pernah dipanggil - hubungkan ke
+    keadaan error sidebar dan/atau tombol Refresh board.

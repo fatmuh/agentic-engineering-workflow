@@ -107,11 +107,13 @@ server.on("error", (error) => fail(`failed to start next: ${error.message}`));
 //    unreachable or bootstrap failed.
 //
 //    Note playwright does NOT wait for this probe: it starts tests on its own
-//    GET /login url poll. That is safe because seeding-before-reads is not the
-//    probe's job — every DB-touching request awaits the memoized ensureSchema
-//    (src/lib/db.ts `schemaReady` guard; the seed is ON CONFLICT DO NOTHING),
-//    so no request can observe an unseeded database regardless of when the
-//    probe completes.
+//    GET /login url poll. That is safe because every DB-touching request awaits
+//    the memoized ensureSchema (src/lib/db.ts `schemaReady` guard), so no
+//    request can observe a half-migrated database regardless of when the probe
+//    completes. The demo board seed is NOT part of that chain any more: it runs
+//    in the background from src/instrumentation.ts at boot, so an e2e test that
+//    asserts on seeded demo rows must not assume the seed finished before the
+//    first request returns.
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function isReady() {

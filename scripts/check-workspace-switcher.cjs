@@ -29,10 +29,28 @@ function contrast(fg, bg) {
   const shots = '/tmp/workspace-compact-check';
   fs.mkdirSync(shots, { recursive: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    // STATE_PATH / CHECK_EMAIL let the check run against a scratch server whose
+    // accounts are seeded per run; without them it expects the dev session.
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+      ...(process.env.STATE_PATH ? { storageState: process.env.STATE_PATH } : {}),
+    });
+    const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
+    if (!process.env.STATE_PATH && process.env.CHECK_EMAIL) {
+      await page.goto(`${base}/login`);
+      await page.locator('#email').fill(process.env.CHECK_EMAIL);
+      await page.locator('#password').fill(process.env.CHECK_PASSWORD || 'password123');
+      await page.getByRole('button', { name: 'Sign in' }).click();
+      await page.waitForURL(url => new URL(url).pathname === '/', { timeout: 60_000 });
+    }
     await page.goto(`${base}/users`);
-    const trigger = () => page.getByRole('button', { name: /Switch workspace, current/ }).filter({ visible: true });
+    // Accessible name is `<active workspace> — ganti workspace` since story 6.
+    const trigger = () => page.getByRole('button', { name: /ganti workspace/i }).filter({ visible: true });
+    // The list is still loading on first paint; every measurement below needs
+    // the ready state, so wait for the trigger to name a workspace before the
+    // keyboard loop starts (a loading menu has no radio rows to focus).
+    await trigger().filter({ hasNotText: 'Memuat workspace' }).waitFor({ timeout: 30_000 });
     const menu = page.getByRole('menu');
     for (const mode of ['light', 'dark']) {
       await page.evaluate(mode => document.documentElement.classList.toggle('dark', mode === 'dark'), mode);
@@ -62,7 +80,12 @@ function contrast(fg, bg) {
         };
       });
       assert.equal(measured.width, 248);
-      assert.ok(measured.height < 230, `compact menu height: ${measured.height}`);
+      // Still a COMPACT menu, but no longer < 230: story 6 added a state note
+      // to the group label (the switcher has to say loading/failed/empty), and
+      // with the seeded two workspaces that is 234px. The guard keeps its
+      // purpose — a menu that grows a row per workspace or loses its compact
+      // rhythm still fails — without failing on the note that was asked for.
+      assert.ok(measured.height < 260, `compact menu height: ${measured.height}`);
       assert.equal(measured.background, mode === 'light' ? 'rgb(255, 255, 255)' : 'rgb(18, 18, 21)');
       assert.match(measured.font, /Geist/);
       for (const sample of measured.samples) {
@@ -77,17 +100,30 @@ function contrast(fg, bg) {
       await page.screenshot({ path: `${shots}/${mode}.png` });
       await page.keyboard.press('Escape');
       await menu.waitFor({ state: 'hidden' });
-      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.startsWith('Switch workspace'));
+      await page.waitForFunction(() => /ganti workspace/i.test(document.activeElement?.getAttribute('aria-label') ?? ''));
     }
     await trigger().focus();
     await page.keyboard.press('Enter');
-    await page.getByRole('menuitemradio', { name: 'Acme Production Pro Plan' }).focus();
+    // Pick a workspace by its current label rather than a seeded name: the
+    // scratch/dev databases differ, and a row's name may also contain its plan
+    // subtitle in the accessible name.
+    const rows = page.getByRole('menuitemradio');
+    await rows.first().waitFor();
+    assert.ok(await rows.count() >= 2, 'needs at least two workspaces to switch between');
+    const unchecked = rows.filter({ checked: false }).first();
+    // The row's first line is the single-letter mark; the name is the first
+    // line of the details column.
+    const targetName = (await unchecked.locator('.workspace-switcher-details > span').first().innerText()).trim();
+    await unchecked.focus();
     await page.keyboard.press('Enter');
     await menu.waitFor({ state: 'hidden' });
-    assert.match(await trigger().getAttribute('aria-label'), /Acme Production/);
+    // Story 6: the name is the trigger text and the accessible name starts
+    // with it, followed by the state clause.
+    assert.equal(await trigger().innerText(), targetName);
+    assert.match(await trigger().getAttribute('aria-label'), new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} — ganti workspace`));
     await trigger().click();
-    assert.equal(await page.getByRole('menuitemradio', { name: 'Acme Production Pro Plan' }).getAttribute('aria-checked'), 'true');
-    assert.equal(await page.getByRole('menuitem', { name: 'Create workspace Demo' }).getAttribute('aria-disabled'), 'true');
+    assert.equal(await page.getByRole('menuitemradio', { name: new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.getByRole('menuitem', { name: 'Buat workspace Demo' }).getAttribute('aria-disabled'), 'true');
     await page.keyboard.press('Escape');
     await menu.waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Collapse sidebar (Cmd+B)' }).click();

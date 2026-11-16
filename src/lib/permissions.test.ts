@@ -34,6 +34,8 @@ const CATALOG_ORDER = [
   "storage.manage",
   "roles.view",
   "roles.manage",
+  "providers.view",
+  "providers.manage",
 ] as const;
 
 const USERS_KEYS = ["users.view", "users.create", "users.update", "users.delete"] as const;
@@ -200,9 +202,9 @@ describe("pageViewPermission", () => {
 // --- catalog integrity: keys, groups, labels stay in sync ------------------
 
 describe("catalog integrity", () => {
-  it("defines exactly the 18 catalog keys, in catalog order", () => {
+  it("defines exactly the 20 catalog keys, in catalog order", () => {
     expect(ALL_PERMISSION_KEYS).toEqual([...CATALOG_ORDER]);
-    expect(ALL_PERMISSION_KEYS).toHaveLength(18);
+    expect(ALL_PERMISSION_KEYS).toHaveLength(20);
   });
 
   it("has a verbs entry (own or aliased) for every nav page id plus watching", () => {
@@ -235,6 +237,7 @@ describe("catalog integrity", () => {
       "users",
       "storage",
       "roles",
+      "providers",
     ]);
   });
 

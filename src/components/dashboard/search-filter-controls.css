@@ -1,0 +1,30 @@
+.search-filter-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-inline-size: 0; max-inline-size: 100%; }
+.search-filter-controls .search-filter-search { inline-size: 14rem; min-inline-size: 0; max-inline-size: 100%; min-block-size: 34px; block-size: auto; box-shadow: none; }
+.search-filter-search [data-slot="input-group-control"] { font-size: .8125rem; }
+.search-filter-controls .search-filter-trigger { min-inline-size: 80px; min-block-size: 34px; block-size: auto; flex-shrink: 0; align-self: stretch; }
+.search-filter-popover[data-slot="popover-content"] {
+  inline-size: min(320px, calc(100vw - 32px));
+  max-block-size: var(--available-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  /* Stable exit endpoint until Base UI unmounts; no keyframe fill reset. */
+  animation: none;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 100ms ease-out;
+}
+.search-filter-popover .ui-fmc { border: 1px solid var(--ui-fmc-border); }
+.search-filter-popover[data-slot="popover-content"]:is([data-starting-style], [data-ending-style], [data-closed]) { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .search-filter-popover[data-slot="popover-content"] { transition: opacity 100ms ease-out, transform 100ms ease-out; }
+  .search-filter-popover[data-slot="popover-content"]:is([data-starting-style], [data-ending-style], [data-closed]) { transform: scale(.95); }
+}
+@container (max-width: 40rem) {
+  .search-filter-controls { inline-size: 100%; }
+  .search-filter-controls .search-filter-search { flex: 1 1 12rem; }
+  .search-filter-search [data-slot="input-group-control"] { font-size: 1rem; }
+}

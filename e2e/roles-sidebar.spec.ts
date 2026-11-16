@@ -40,6 +40,7 @@ const EXPECTED_ITEMS = {
     "Byteforge",
     "Canguard",
     "Home",
+    "LLM Providers",
     "OmniCorp",
     "Segnalio",
     "Toggle Sidebar",
@@ -53,6 +54,7 @@ const EXPECTED_ITEMS = {
     "Byteforge",
     "Canguard",
     "Home",
+    "LLM Providers",
     "OmniCorp",
     "Permissions",
     "Roles",
@@ -119,7 +121,7 @@ test.describe("Admin role sidebar and command palette", () => {
     await login(page, ADMIN_EMAIL);
   });
 
-  test("renders all 8 workspace and admin links and full admin nav", async ({ page }) => {
+  test("renders all 9 workspace and admin links and full admin nav", async ({ page }) => {
     const sidebar = page.locator("aside");
     // Workspace + admin links, exact presence
     await expect(sidebar.getByRole("link", { name: "Home", exact: true })).toBeVisible();
@@ -130,12 +132,13 @@ test.describe("Admin role sidebar and command palette", () => {
     await expect(sidebar.getByRole("link", { name: "Roles", exact: true })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Permissions", exact: true })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Storage", exact: true })).toBeVisible();
+    await expect(sidebar.getByRole("link", { name: "LLM Providers", exact: true })).toBeVisible();
 
-    // Admin nav structure: visible with exactly 4 links (Users, Roles,
-    // Permissions, Storage)
+    // Admin nav structure: visible with exactly 5 links (Users, Roles,
+    // Permissions, Storage, LLM Providers)
     const adminNav = page.locator("aside nav[aria-label='Admin']");
     await expect(adminNav).toBeVisible();
-    await expect(adminNav.getByRole("link")).toHaveCount(4);
+    await expect(adminNav.getByRole("link")).toHaveCount(5);
     await expect(adminNav.getByRole("link", { name: "Users", exact: true })).toBeVisible();
     await expect(adminNav.getByRole("link", { name: "Roles", exact: true })).toBeVisible();
     await expect(adminNav.getByRole("link", { name: "Permissions", exact: true })).toBeVisible();
@@ -145,7 +148,7 @@ test.describe("Admin role sidebar and command palette", () => {
     await assertWatchingSection(page);
   });
 
-  test("command palette contains exact admin item set (14 items)", async ({ page }) => {
+  test("command palette contains exact admin item set (15 items)", async ({ page }) => {
     await assertCommandPalette(page, EXPECTED_ITEMS.admin);
   });
 });
@@ -163,7 +166,7 @@ test.describe("Editor role sidebar and command palette", () => {
     await login(page, EDITOR_EMAIL);
   });
 
-  test("renders workspace links + Users link, but zero Roles, Permissions or Storage links", async ({ page }) => {
+  test("renders workspace links + Users and Providers links, but zero Roles, Permissions or Storage links", async ({ page }) => {
     const sidebar = page.locator("aside");
     // Workspace links visible (Wiki included — editor holds wiki.view)
     await expect(sidebar.getByRole("link", { name: "Home", exact: true })).toBeVisible();
@@ -176,11 +179,14 @@ test.describe("Editor role sidebar and command palette", () => {
     await expect(sidebar.getByRole("link", { name: "Roles", exact: true })).toHaveCount(0);
     await expect(sidebar.getByRole("link", { name: "Permissions", exact: true })).toHaveCount(0);
     await expect(sidebar.getByRole("link", { name: "Storage", exact: true })).toHaveCount(0);
+    // Editor holds providers.view (seed), so it sees the registry but NOT the
+    // Roles/Permissions/Storage admin pages.
+    await expect(sidebar.getByRole("link", { name: "LLM Providers", exact: true })).toBeVisible();
 
-    // Admin nav structure: visible with exactly 1 link (Users) plus Admin label
+    // Admin nav structure: exactly 2 links (Users, LLM Providers) plus the label
     const adminNav = page.locator("aside nav[aria-label='Admin']");
     await expect(adminNav).toBeVisible();
-    await expect(adminNav.getByRole("link")).toHaveCount(1);
+    await expect(adminNav.getByRole("link")).toHaveCount(2);
     await expect(adminNav.getByRole("link", { name: "Users", exact: true })).toBeVisible();
     await expect(adminNav).toContainText("Admin");
 
@@ -188,7 +194,7 @@ test.describe("Editor role sidebar and command palette", () => {
     await assertWatchingSection(page);
   });
 
-  test("command palette contains exact editor item set (11 items)", async ({ page }) => {
+  test("command palette contains exact editor item set (12 items)", async ({ page }) => {
     await assertCommandPalette(page, EXPECTED_ITEMS.editor);
   });
 });

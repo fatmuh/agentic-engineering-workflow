@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { ChatGptIcon, ClaudeIcon, FigmaIcon, GithubIcon, GoogleGeminiIcon, NotionIcon, SlackIcon, StripeIcon } from "@hugeicons/core-free-icons";
 import type { AgentTaskState } from "./agent-board-data";
-import type { WorktreeAvatar, WorktreeNode, WorktreeTool } from "./worktree-tree-data";
+import { parseDurationToSeconds, formatSecondsToDuration } from "./agent-board-data";
+import { formatTokens, type WorktreeAvatar, type WorktreeNode, type WorktreeTool } from "./worktree-tree-data";
 import { AlertCircle, Check, ChevronDown, Clock } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,20 @@ function WorktreeCard({ node, open, onToggle }: {
   onToggle: (id: string) => void;
 }) {
   const childCount = node.children?.length ?? 0;
+  const isRunning = node.state === "running";
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => {
+      setElapsed(s => s + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  const baseSeconds = parseDurationToSeconds(node.time);
+  const displayTime = isRunning ? formatSecondsToDuration(baseSeconds + elapsed) : node.time;
+
   return (
     <div
       data-worktree-card={node.id}
@@ -105,8 +120,17 @@ function WorktreeCard({ node, open, onToggle }: {
         {" "}{node.task}
       </p>
       <div className="worktree-meta mt-auto flex min-h-4 items-center gap-1 text-[0.6875rem] tabular-nums">
-        <span className="text-foreground">{node.cost}</span>
-        <span className="worktree-model">· {node.time}</span>
+        {node.tokenUsage ? (
+          <span
+            className="font-medium text-foreground"
+            title={`Total Tokens: ${node.tokenUsage.totalTokens.toLocaleString()} (Input: ${node.tokenUsage.inputTokens.toLocaleString()}, Output: ${node.tokenUsage.outputTokens.toLocaleString()}${node.tokenUsage.cacheReadTokens ? `, Cache Read: ${node.tokenUsage.cacheReadTokens.toLocaleString()}` : ""}${node.tokenUsage.cacheWriteTokens ? `, Cache Write: ${node.tokenUsage.cacheWriteTokens.toLocaleString()}` : ""})`}
+          >
+            {formatTokens(node.tokenUsage.totalTokens)}
+          </span>
+        ) : (
+          <span className="text-foreground">{node.cost}</span>
+        )}
+        <span className="worktree-model">· {displayTime}</span>
         {childCount > 0 && (
           <button
             type="button"
@@ -210,7 +234,7 @@ export function WorktreeTree({ run }: { run: WorktreeNode }) {
 
   return (
     <div className="worktree-canvas">
-      <ul ref={treeRef} role="tree" aria-label="Agent run" onKeyDown={onKeyDown} className="worktree-tree">
+      <ul ref={treeRef} role="tree" aria-label="Agent run" onKeyDown={onKeyDown} className="worktree-tree" style={{ "--worktree-column-count": Math.max(1, run.children?.length ?? 0) } as CSSProperties}>
         <TreeNode node={run} parentId={null} depth={0} openIds={openIds} focusedId={focusedId} onToggle={toggle} onFocusNode={setFocusedId} />
       </ul>
     </div>

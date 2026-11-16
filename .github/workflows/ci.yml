@@ -46,3 +46,13 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify (build, lint non-gating, unit, matrix, e2e)
         run: npm run verify
+      # CAP-1 only shows itself with several processes booting one database, so
+      # it has no home inside `npm run verify` (which would fork 8 servers on
+      # every local run). It runs HERE instead, after verify, against the same
+      # Postgres service — without a step, concurrent boot can regress while
+      # every other suite stays green.
+      #
+      # Node 22 must have built-in TypeScript stripping (default from 22.18);
+      # the script fails loudly with that message if it does not.
+      - name: Multi-instance bootstrap (CAP-1)
+        run: npm run test:multi-instance

@@ -1,0 +1,67 @@
+- id: "1"
+  title: Fondasi schema — composite key per project
+  description: >-
+    Migrasi bmad_tasks, bmad_agent_nodes, dan bmad_backlogs ke PRIMARY KEY (project_id, id),
+    FK task_id/parent_id menjadi composite CASCADE, plus unique index pada bmad_projects
+    (remote ternormalisasi, path untuk project tanpa remote). Menutup CAP-5; bentuk target
+    dan urutan migrasi di companion task-identity.md.
+  invoke_dev_with: >-
+    Migrasi wajib idempoten: periksa pg_constraint sebelum mengubah, aman dijalankan ulang.
+    Jalankan pada database yang sudah berisi data prj_default (bukan database kosong) —
+    itulah kondisi sebenarnya. Perhatikan konsekuensi CASCADE pada task_id yang mengubah
+    perilaku lama SET NULL; catat di pesan commit, jangan disembunyikan. PostgreSQL 18.6.
+
+- id: "2"
+  title: Resolusi identitas workspace — get-or-create
+  description: >-
+    Satu fungsi normalisasi + resolusi yang memetakan remote URL atau path ke tepat satu
+    project, dipakai POST /api/projects dan awm_project_init. Menutup CAP-2; aturan
+    prioritas kunci, langkah normalisasi, dan tabel keputusan ada di companion
+    identity-mapping.md.
+  invoke_dev_with: >-
+    Normalisasi remote harus menghasilkan kunci sama untuk scp-like, https, dan ssh
+    dengan/tanpa .git — uji keempat varian di identity-mapping.md. POST /api/projects
+    tetap create murni; get-or-create hidup di jalur resolusi terpisah. Idempoten:
+    inisialisasi dua kali untuk workspace sama menghasilkan satu baris.
+
+- id: "3"
+  title: API board ter-scope, tanpa prj_default hardcoded
+  description: >-
+    Hapus default parameter prj_default di getBMadTasks, getBMadAgentTree, dan
+    ensureInitialBMadData sehingga pemanggil yang lupa mengisi projectId gagal bersuara;
+    hentikan seed demo sebagai efek samping GET /api/projects. Menutup CAP-3; peta
+    file:line di companion brownfield.md.
+  invoke_dev_with: >-
+    Seed demo harus tetap berjalan sekali secara idempoten untuk prj_default, tapi tidak
+    lagi dipicu oleh GET daftar project. Setelah perubahan, pastikan GET /api/projects
+    pada database yang sudah berisi data tidak menulis apa pun.
+
+- id: "4"
+  title: Workspace Switcher berfungsi penuh
+  description: >-
+    Sidebar mengambil daftar workspace dari bmad_projects, menyimpan project aktif, dan
+    Agent Board membaca projectId dari keadaan itu. Menutup CAP-1; alur di companion
+    architecture-diagrams.md.
+  invoke_dev_with: >-
+    Kelima titik hardcode di agent-board-view.tsx harus diganti, termasuk dua jalur mutasi
+    (approve/reject dan update stage) di baris 145 dan 189 — bukan hanya dua fetch.
+    Mengganti fetch tanpa mutasi menghasilkan board benar dengan aksi yang menulis ke
+    project salah. Polling 5 detik harus memakai project terbaru, bukan menangkap nilai
+    lama di closure. Prop plan pada WorkspaceSwitcher tidak punya padanan di bmad_projects —
+    turunkan atau hapus dari tampilan. Verifikasi manual dengan dua project berisi task berbeda.
+
+- id: "5"
+  title: State project per-workspace di CLI Go
+  description: >-
+    Ganti activeProjectId tunggal menjadi peta workspaceProjects di ~/.bmad-monitor/config.json,
+    dan ganti sembilan fallback r.cfg.ActiveProjectID dengan satu fungsi resolve berbasis
+    direktori kerja. Menutup CAP-4; bentuk config dan aturan tulis di companion
+    identity-mapping.md.
+  invoke_dev_with: >-
+    Kerjakan di repo terpisah: /Users/adamramadhan/Projects/bmad-monitor-mcp (Go, bukan
+    working tree dashboard). Sembilan titik fallback ada di internal/mcp/tools.go baris
+    243, 315, 367, 415, 473, 597, 659, 722, 788 — arahkan semuanya ke satu fungsi, jangan
+    ganti satu per satu. Config.Save() menulis seluruh struct via os.WriteFile, jadi
+    read-modify-write pada peta harus memakai file lock agar dua proses CLI paralel tidak
+    saling menimpa. activeProjectId tingkat atas dipertahankan sebagai default agar config
+    lama tetap terbaca.

@@ -15,6 +15,9 @@ export const ADMIN_PAGES = [
   // the roles resource's permissions, so it owns no verbs of its own.
   { id: "permissions", href: "/permissions", label: "Permissions", icon: SlidersHorizontal },
   { id: "storage", href: "/storage", label: "Storage", icon: Database },
+  // The registry behind the awm_provider_* MCP tools. No URL segment of its own
+  // in the permission catalog: the page gate is `providers.view`.
+  { id: "providers", href: "/providers", label: "LLM Providers", icon: KeyRound },
 ] as const;
 
 export const ALL_PAGES = [...WORKSPACE_PAGES, ...ADMIN_PAGES];

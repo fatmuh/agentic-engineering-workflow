@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
 import {
+  AlertCircle,
   ChevronUp,
   MoreHorizontal,
   PanelLeft,
@@ -15,6 +15,9 @@ import {
 import { useSidebar } from "@/components/ui/sidebar";
 import { UserProfileMenu } from "./user-profile-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { useActiveProject, workspaceSubtitle } from "./project-context";
+import { WORKSPACE_LIST_FAILED } from "./workspace-switcher-state";
+import { useAnnounce } from "./announcement-context";
 import { usePermission } from "./permission-provider";
 import { pageViewPermission } from "@/lib/permissions";
 import { ADMIN_PAGES, WORKSPACE_PAGES, WATCHED_COMPANIES } from "./navigation";
@@ -38,6 +41,65 @@ function AdminNavigation({ currentRoute, collapsed = false, onNavigate }: { curr
   );
 }
 
+/**
+ * Visible recovery for a failed workspace list, directly under the switcher.
+ *
+ * The switcher's menu already carries "Coba lagi", but that affordance only
+ * exists once the menu is open — the sidebar showed a failed (or stale) chip
+ * with no way forward short of a page reload, which is the hole D-8b names.
+ * Both call the context's one `reload()`, so there is still a single path.
+ *
+ * The news is the sentence inside a `role="status"` region, and the button is
+ * its sibling — the same shape the board's notice uses. Putting the button
+ * inside the region would re-announce the sentence every time it is focused.
+ * The two sentences come from `workspace-switcher-state`, so the sidebar and
+ * the board cannot drift apart.
+ */
+function WorkspaceListRecovery({ collapsed, onRetry }: {
+  collapsed: boolean;
+  onRetry: () => void;
+}) {
+  // No stale variant: nothing calls `reload()` while rows are loaded, so the
+  // sidebar can only ever be in this state with an empty list. The switcher's
+  // menu note covers the stale case it can actually reach.
+  const sentence = WORKSPACE_LIST_FAILED;
+  // `reload()` flips the status to "loading" synchronously, which unmounts
+  // this row in the same click — taking keyboard focus with it and dropping it
+  // to <body>. Focus moves to the sidebar column first, which stays mounted.
+  const retry = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const column = event.currentTarget.closest<HTMLElement>("[data-workspace-column]");
+    column?.focus();
+    onRetry();
+  };
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={retry}
+        title={`${sentence} Coba lagi`}
+        aria-label={`${sentence} Coba lagi`}
+        className="mx-auto mt-1 flex size-8 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 cursor-pointer"
+      >
+        <AlertCircle className="size-4" aria-hidden="true" />
+      </button>
+    );
+  }
+  return (
+    <div className="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-normal text-neutral-600 dark:text-neutral-400">
+      <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
+      <p role="status" className="min-w-0 flex-1">{sentence}</p>
+      <button
+        type="button"
+        onClick={retry}
+        className="shrink-0 cursor-pointer font-medium underline hover:text-neutral-900 dark:hover:text-neutral-100"
+      >
+        Coba lagi
+      </button>
+    </div>
+  );
+}
+
 interface AppSidebarProps {
   currentRoute?: string;
   onNavigate?: (route: string) => void;
@@ -53,17 +115,36 @@ export function AppSidebar({
   const isCollapsed = !open;
   const { can } = usePermission();
 
-  const [currentWorkspace, setCurrentWorkspace] = useState("Onyx");
+  // The workspace list and the active workspace both come from the shared
+  // project context — the same state the Agent Board reads its requests from,
+  // so choosing here is what the board shows.
+  const { projects, projectId, project, setProjectId, status: projectStatus, reload } = useActiveProject();
+  const announce = useAnnounce();
 
-  const workspaces = [
-    { id: "onyx", name: "Onyx", plan: "Enterprise", active: currentWorkspace === "Onyx" },
-    { id: "acme", name: "Acme Production", plan: "Pro Plan", active: currentWorkspace === "Acme Production" },
-    { id: "byteforge", name: "Byteforge Staging", plan: "Developer", active: currentWorkspace === "Byteforge Staging" },
-  ];
+  const workspaces = projects.map(item => ({
+    id: item.id,
+    name: item.name,
+    plan: workspaceSubtitle(item),
+  }));
 
-  const handleSwitchWorkspace = (name: string) => {
-    setCurrentWorkspace(name);
-    toast.success(`Switched workspace to ${name}`);
+  // `value` is the project id: the active row is marked from the same state
+  // the board fetches from, not from a name match that could collide.
+  const currentWorkspaceId = project?.id ?? "";
+
+  const handleSwitchWorkspace = (id: string) => {
+    const next = projects.find(item => item.id === id);
+    // Clearing the active row is not a switch — there is nothing to tell the
+    // user about, and announcing an empty name would be noise.
+    if (!next || next.id === projectId) return;
+    setProjectId(next.id);
+    // One sentence, two destinations. Sonner already exposes its own
+    // `aria-live`, but a toast disappears after a few seconds (and a second
+    // identical toast can replace the first before it is read); the shell's
+    // region persists, so the sentence is still there when the reader reaches
+    // it, and every write is re-announced even if the text is unchanged.
+    const sentence = `Beralih ke workspace ${next.name}`;
+    toast.success(sentence);
+    announce(`${sentence}.`);
   };
 
   // Permission-filtered nav: mobile and desktop maps both render this list, so
@@ -89,10 +170,10 @@ export function AppSidebar({
           openMobile ? "translate-x-0" : "-translate-x-full pointer-events-none"
         }`}
       >
-        <div className="min-h-0 w-full flex-1 overflow-y-auto scrollbar-none">
+        <div data-workspace-column tabIndex={-1} className="min-h-0 w-full flex-1 overflow-y-auto scrollbar-none focus-visible:outline-none">
           {/* Workspace Brand Row with Close Button */}
           <div className="flex h-8 w-full items-center justify-between px-1">
-            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspace} onChange={handleSwitchWorkspace} onCreate={() => toast.info("Workspace creation is not available in this demo")} />
+            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspaceId} onChange={handleSwitchWorkspace} status={projectStatus} onRetry={reload} />
 
             <button
               type="button"
@@ -103,6 +184,8 @@ export function AppSidebar({
               <X className="size-4" />
             </button>
           </div>
+
+          {projectStatus === "error" && <WorkspaceListRecovery collapsed={false} onRetry={reload} />}
 
           {/* Search Trigger on Mobile */}
           <button
@@ -215,14 +298,14 @@ export function AppSidebar({
           isCollapsed ? "w-[60px]" : "w-[240px]"
         }`}
       >
-        <div className="min-h-0 w-full flex-1 overflow-y-auto scrollbar-none">
+        <div data-workspace-column tabIndex={-1} className="min-h-0 w-full flex-1 overflow-y-auto scrollbar-none focus-visible:outline-none">
           {/* Workspace Brand Row */}
           <div
             className={`flex h-8 w-full items-center ${
               isCollapsed ? "justify-center px-0" : "justify-between px-1"
             }`}
           >
-            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspace} onChange={handleSwitchWorkspace} onCreate={() => toast.info("Workspace creation is not available in this demo")} collapsed={isCollapsed} />
+            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspaceId} onChange={handleSwitchWorkspace} collapsed={isCollapsed} status={projectStatus} onRetry={reload} />
 
             {/* Collapse Trigger Button on Desktop */}
             {!isCollapsed && (
@@ -236,6 +319,8 @@ export function AppSidebar({
               </button>
             )}
           </div>
+
+          {projectStatus === "error" && <WorkspaceListRecovery collapsed={isCollapsed} onRetry={reload} />}
 
           {/* Search Trigger Button */}
           <button
