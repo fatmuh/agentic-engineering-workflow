@@ -1,4 +1,5 @@
 import { query } from "./db";
+import { pickAgentTree } from "./agent-tree";
 
 export interface BMadTokenUsage {
   inputTokens: number;
@@ -413,41 +414,24 @@ export async function getBMadAgentTree(projectId: string): Promise<BMadAgentTree
 
   if (res.rows.length === 0) return null;
 
-  // Build tree from flat array
-  const nodeMap = new Map<string, BMadAgentTreeNode>();
-  let rootNode: BMadAgentTreeNode | null = null;
+  const nodes: BMadAgentTreeNode[] = res.rows.map(row => ({
+    id: row.id,
+    projectId: row.project_id,
+    taskId: row.task_id,
+    parentId: row.parent_id,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    action: row.action,
+    durationMs: Number(row.duration_ms) || 0,
+    tokenUsage: row.token_usage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    modelUsed: row.model_used || { provider: "Anthropic", modelId: "claude-sonnet-5-5" },
+    artifacts: row.artifacts || [],
+    tools: row.tools || [],
+    errorDetail: row.error_detail,
+    timestamp: row.timestamp.toISOString(),
+    children: [],
+  }));
 
-  for (const row of res.rows) {
-    const node: BMadAgentTreeNode = {
-      id: row.id,
-      projectId: row.project_id,
-      taskId: row.task_id,
-      parentId: row.parent_id,
-      name: row.name,
-      role: row.role,
-      status: row.status,
-      action: row.action,
-      durationMs: Number(row.duration_ms) || 0,
-      tokenUsage: row.token_usage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      modelUsed: row.model_used || { provider: "Anthropic", modelId: "claude-sonnet-5-5" },
-      artifacts: row.artifacts || [],
-      tools: row.tools || [],
-      errorDetail: row.error_detail,
-      timestamp: row.timestamp.toISOString(),
-      children: [],
-    };
-    nodeMap.set(node.id, node);
-  }
-
-  for (const node of nodeMap.values()) {
-    if (node.parentId && nodeMap.has(node.parentId)) {
-      const parent = nodeMap.get(node.parentId)!;
-      parent.children = parent.children || [];
-      parent.children.push(node);
-    } else if (!rootNode) {
-      rootNode = node;
-    }
-  }
-
-  return rootNode;
+  return pickAgentTree(nodes);
 }
