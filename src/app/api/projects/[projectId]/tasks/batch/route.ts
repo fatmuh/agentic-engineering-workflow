@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import type { BMadTaskItem } from "@/lib/bmad";
@@ -17,7 +18,10 @@ export async function POST(
     const created: BMadTaskItem[] = [];
 
     for (const t of tasks) {
-      const id = t.id || `TASK-${Date.now().toString(36).toUpperCase()}`;
+      // Random, not clock-based: concurrent batches landed in the same
+      // millisecond, and the upsert below overwrote one task with another.
+      // Ten characters never match nextSequentialId's `TASK-[0-9]{1,9}`.
+      const id = t.id || `TASK-${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`;
       const title = t.title || "Untitled Task";
       const description = t.description || "";
       const stage = t.stage || "ready_for_review";
