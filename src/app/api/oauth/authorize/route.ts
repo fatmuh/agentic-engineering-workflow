@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   const redirectUri = get("redirect_uri") ?? "";
   if (!isSafeRedirectUri(redirectUri)) {
     return NextResponse.json(
-      { error: "invalid_request", error_description: "redirect_uri tidak valid" },
+      { error: "invalid_request", error_description: "redirect_uri is invalid" },
       { status: 400 }
     );
   }
@@ -62,16 +62,16 @@ export async function POST(req: Request) {
   }
 
   if (!verifyConsentCsrf(user.id, params.redirectUri, params.state, get("csrf") ?? "")) {
-    return callbackWith("invalid_request", "Token keamanan form tidak valid — muat ulang halaman otorisasi.");
+    return callbackWith("invalid_request", "The form security token is invalid. Reload the authorization page.");
   }
 
   if (get("decision") !== "authorize") {
-    return callbackWith("access_denied", "Anda menolak permintaan otorisasi BMad Monitor.");
+    return callbackWith("access_denied", "You denied the BMad Monitor authorization request.");
   }
 
   // Allowance gate re-checked at decision time, not just page render.
   if (user.status !== "Active") {
-    return callbackWith("access_denied", "Akun Anda belum memiliki izin / allowance untuk mengakses BMad Workspace ini.");
+    return callbackWith("access_denied", "Your account does not have permission (allowance) to access this BMad Workspace yet.");
   }
 
   const code = await insertAuthCode({

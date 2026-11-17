@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
+import { AGENT_BOARD_PATH, boardSegment } from "./project-selection";
 
 interface Announcement {
   /** The latest sentence written by any component. */
@@ -77,13 +78,16 @@ export function AnnouncementProvider({ children }: { children: ReactNode }) {
     clearTimer.current = setTimeout(clear, ANNOUNCEMENT_LIFETIME_MS);
   }, [clear]);
 
-  // Navigating away bounds the announcement to the page it was made on.
-  const firstPath = useRef(pathname);
+  // Navigating away bounds the announcement to the page it was made on. Every
+  // `/agent-board/<slug>` is one page: switching workspace there changes the
+  // URL, and that switch is exactly what was just announced.
+  const page = boardSegment(pathname) === null ? pathname : AGENT_BOARD_PATH;
+  const firstPage = useRef(page);
   useEffect(() => {
-    if (firstPath.current === pathname) return;
-    firstPath.current = pathname;
+    if (firstPage.current === page) return;
+    firstPage.current = page;
     clear();
-  }, [pathname, clear]);
+  }, [page, clear]);
 
   useEffect(() => () => {
     if (clearTimer.current) clearTimeout(clearTimer.current);

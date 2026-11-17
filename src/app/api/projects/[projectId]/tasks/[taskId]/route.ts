@@ -97,11 +97,11 @@ export async function PATCH(
 
     let steps = body.steps ?? current.steps;
     if (body.addStep && typeof body.addStep === "string") {
-      steps = [...steps, { text: body.addStep, time: "now" }];
+      steps = [...steps, { text: body.addStep, time: new Date().toISOString() }];
     } else if (newApprovalStatus === "approved" && current.approval_status !== "approved") {
-      steps = [...steps, { text: "Disetujui oleh reviewer di Web Dashboard", time: "sekarang" }];
+      steps = [...steps, { text: "Approved by a reviewer in the Web Dashboard", time: new Date().toISOString() }];
     } else if (newApprovalStatus === "rejected" && current.approval_status !== "rejected") {
-      steps = [...steps, { text: `Ditolak oleh reviewer: ${rejectionReason || "tanpa catatan"}`, time: "sekarang" }];
+      steps = [...steps, { text: `Rejected by a reviewer: ${rejectionReason || "no note"}`, time: new Date().toISOString() }];
     }
 
     const res = await query<{

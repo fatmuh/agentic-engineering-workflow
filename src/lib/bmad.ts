@@ -1,5 +1,5 @@
 import { query } from "./db";
-import { pickAgentTree } from "./agent-tree";
+import { defaultSessionId, linkAgentTrees, pickAgentTree, summarizeSessions, type AgentSessionSummary } from "./agent-tree";
 
 export interface BMadTokenUsage {
   inputTokens: number;
@@ -59,6 +59,12 @@ export interface BMadTaskItem {
   duration: string;
   createdAt: string;
   updatedAt: string;
+  /** When the task last entered a running stage; null if it never ran. */
+  startedAt?: string | null;
+  /** When the task entered a closed stage (completed/rejected); null while open. */
+  completedAt?: string | null;
+  /** Tokens of the agent nodes linked to the task and of their descendants. */
+  tokenUsage?: BMadTokenUsage;
 }
 
 export interface BMadAgentTreeNode {
@@ -85,6 +91,8 @@ export interface BMadProject {
   name: string;
   gitRemoteUrl?: string | null;
   workspacePath?: string | null;
+  /** URL segment for `/agent-board/<slug>`; null for a row that has none yet. */
+  slug?: string | null;
   ownerId?: string | null;
   teamId?: string | null;
   createdAt: string;
@@ -147,8 +155,8 @@ export async function ensureInitialBMadData(
         (
           'TASK-101',
           $1,
-          'Implementasi Autentikasi OAuth 2.0 PKCE & Whitelist',
-          'Membuat handler otorisasi loopback dan endpoint validasi user allowance untuk CLI BMad Monitor.',
+          'Implement OAuth 2.0 PKCE Authentication & Whitelist',
+          'Build the loopback authorization handler and the user allowance validation endpoint for the BMad Monitor CLI.',
           'ready_for_review',
           'high',
           'pending',
@@ -161,8 +169,8 @@ export async function ensureInitialBMadData(
         (
           'TASK-102',
           $1,
-          'Analisis Dampak Kode (Code Impact Analysis) pada Auth System',
-          'Identifikasi breaking changes dan deprecation modul basic auth lama.',
+          'Code Impact Analysis on the Auth System',
+          'Identify breaking changes and the deprecation of the old basic auth module.',
           'in_progress',
           'medium',
           'approved',
@@ -175,8 +183,8 @@ export async function ensureInitialBMadData(
         (
           'TASK-103',
           $1,
-          'Setup Telemetri Token Usage pada AffectUI Agent Tree',
-          'Mengganti metrik cost dolar dengan token breakdown (input, output, cache read/write).',
+          'Set Up Token Usage Telemetry in the AffectUI Agent Tree',
+          'Replace the dollar cost metric with a token breakdown (input, output, cache read/write).',
           'completed',
           'high',
           'approved',
@@ -190,20 +198,20 @@ export async function ensureInitialBMadData(
       [
         projectId,
         JSON.stringify([
-          { text: "Membaca spesifikasi WEB_SPECIFICATION.md", time: "5m lalu" },
-          { text: "Membuat endpoint /oauth/authorize dan /api/oauth/token", time: "3m lalu" },
-          { text: "Menunggu persetujuan reviewer di Web Dashboard", time: "sekarang" },
+          { text: "Reading the WEB_SPECIFICATION.md spec", time: "5m ago" },
+          { text: "Building the /oauth/authorize and /api/oauth/token endpoints", time: "3m ago" },
+          { text: "Waiting for reviewer approval in the Web Dashboard", time: "now" },
         ]),
         JSON.stringify([
-          { title: "Verifikasi allowance check di web", completed: true },
+          { title: "Verify the allowance check on the web", completed: true },
           { title: "Callback loopback redirect uri", completed: true },
           { title: "Code challenge S256 validation", completed: false },
         ]),
-        JSON.stringify([{ path: "docs/WEB_SPECIFICATION.md", description: "Spesifikasi Auth" }]),
+        JSON.stringify([{ path: "docs/WEB_SPECIFICATION.md", description: "Auth spec" }]),
         JSON.stringify([
-          { text: "Scanning dependency graph codebase", time: "3m lalu" },
-          { text: "Menemukan 2 file terdampak breaking change", time: "1m lalu" },
-          { text: "Menyusun strategi migrasi backward compatibility", time: "sekarang" },
+          { text: "Scanning the codebase dependency graph", time: "3m ago" },
+          { text: "Found 2 files affected by a breaking change", time: "1m ago" },
+          { text: "Drafting a backward-compatible migration strategy", time: "now" },
         ]),
         JSON.stringify([
           { title: "Scan internal/auth/legacy", completed: true },
@@ -211,9 +219,9 @@ export async function ensureInitialBMadData(
         ]),
         JSON.stringify([{ path: "src/lib/auth.ts" }]),
         JSON.stringify([
-          { text: "Merestrukturisasi komponen WorktreeCard", time: "12m lalu" },
-          { text: "Menghubungkan payload tokenUsage dari API", time: "8m lalu" },
-          { text: "Verifikasi tampilan responsive dark/light mode", time: "2m lalu" },
+          { text: "Restructuring the WorktreeCard component", time: "12m ago" },
+          { text: "Wiring the tokenUsage payload from the API", time: "8m ago" },
+          { text: "Verifying the responsive dark/light layout", time: "2m ago" },
         ]),
         JSON.stringify([
           { title: "Format token number display (k/M)", completed: true },
@@ -258,7 +266,7 @@ export async function ensureInitialBMadData(
           'BMad Master Orchestrator'::text,
           'orchestrator'::text,
           'running'::text,
-          'Mengkoordinasikan analisis arsitektur dan eksekusi task sprint'::text,
+          'Coordinating architecture analysis and sprint task execution'::text,
           84000::bigint,
           $2::jsonb,
           $3::jsonb,
@@ -273,7 +281,7 @@ export async function ensureInitialBMadData(
           'BMad Analyst'::text,
           'analyst'::text,
           'running'::text,
-          'Menganalisis file context docs/PRD.md dan mengidentifikasi dependensi domain'::text,
+          'Analyzing the docs/PRD.md context file and identifying domain dependencies'::text,
           42000::bigint,
           $6::jsonb,
           $7::jsonb,
@@ -288,7 +296,7 @@ export async function ensureInitialBMadData(
           'BMad Architect'::text,
           'architect'::text,
           'waiting_approval'::text,
-          'Menyiapkan rancangan solusi arsitektur dan security gates'::text,
+          'Preparing the architecture solution design and security gates'::text,
           36000::bigint,
           $10::jsonb,
           $11::jsonb,
@@ -303,7 +311,7 @@ export async function ensureInitialBMadData(
           'BMad Developer'::text,
           'developer'::text,
           'completed'::text,
-          'Slicing komponen UI dan menyatukan telemetri token usage'::text,
+          'Slicing UI components and unifying token usage telemetry'::text,
           28000::bigint,
           $14::jsonb,
           $15::jsonb,
@@ -360,10 +368,13 @@ export async function getBMadTasks(projectId: string): Promise<BMadTaskItem[]> {
     duration: string;
     created_at: Date;
     updated_at: Date;
+    started_at: Date | null;
+    completed_at: Date | null;
   }>(
     `SELECT * FROM bmad_tasks WHERE project_id = $1 ORDER BY updated_at DESC`,
     [projectId]
   );
+  const tokens = await getTaskTokenUsage(projectId);
 
   return res.rows.map(row => ({
     id: row.id,
@@ -383,7 +394,54 @@ export async function getBMadTasks(projectId: string): Promise<BMadTaskItem[]> {
     duration: row.duration || "0s",
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+    startedAt: row.started_at ? row.started_at.toISOString() : null,
+    completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+    tokenUsage: tokens.get(row.id) ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 },
   }));
+}
+
+/**
+ * Tokens spent per task: every agent node linked to the task (`task_id`) plus
+ * all of its descendants, each node counted once per task. The hook links a
+ * per-task node under the session and hangs that task's subagents below it,
+ * and an Execute Build session links its session node, so both shapes sum the
+ * work of the task without the rest of the session.
+ */
+export async function getTaskTokenUsage(projectId: string): Promise<Map<string, BMadTokenUsage>> {
+  const res = await query<{
+    task_id: string;
+    input_tokens: string;
+    output_tokens: string;
+    cache_read_tokens: string;
+    cache_write_tokens: string;
+    total_tokens: string;
+  }>(
+    `WITH RECURSIVE linked(id, task_id) AS (
+       SELECT id, task_id FROM bmad_agent_nodes
+        WHERE project_id = $1 AND task_id IS NOT NULL
+       UNION
+       SELECT n.id, l.task_id FROM bmad_agent_nodes n
+         JOIN linked l ON n.parent_id = l.id
+        WHERE n.project_id = $1
+     )
+     SELECT l.task_id,
+            COALESCE(sum((n.token_usage->>'inputTokens')::bigint), 0)      AS input_tokens,
+            COALESCE(sum((n.token_usage->>'outputTokens')::bigint), 0)     AS output_tokens,
+            COALESCE(sum((n.token_usage->>'cacheReadTokens')::bigint), 0)  AS cache_read_tokens,
+            COALESCE(sum((n.token_usage->>'cacheWriteTokens')::bigint), 0) AS cache_write_tokens,
+            COALESCE(sum((n.token_usage->>'totalTokens')::bigint), 0)      AS total_tokens
+       FROM linked l
+       JOIN bmad_agent_nodes n ON n.project_id = $1 AND n.id = l.id
+      GROUP BY l.task_id`,
+    [projectId]
+  );
+  return new Map(res.rows.map(row => [row.task_id, {
+    inputTokens: Number(row.input_tokens),
+    outputTokens: Number(row.output_tokens),
+    cacheReadTokens: Number(row.cache_read_tokens),
+    cacheWriteTokens: Number(row.cache_write_tokens),
+    totalTokens: Number(row.total_tokens),
+  }]));
 }
 
 /**
@@ -391,6 +449,26 @@ export async function getBMadTasks(projectId: string): Promise<BMadTaskItem[]> {
  * only at startup.
  */
 export async function getBMadAgentTree(projectId: string): Promise<BMadAgentTreeNode | null> {
+  const nodes = await loadAgentNodes(projectId);
+  return nodes.length === 0 ? null : pickAgentTree(nodes);
+}
+
+/**
+ * Every session of the project, summarised, plus the tree of one of them: the
+ * requested session when it exists, otherwise a live one, otherwise the most
+ * recently active. What the Worktree tab needs in one round trip.
+ */
+export async function getBMadAgentSessions(
+  projectId: string,
+  sessionId: string | null,
+): Promise<{ sessions: AgentSessionSummary[]; selectedId: string | null; tree: BMadAgentTreeNode | null }> {
+  const roots = linkAgentTrees(await loadAgentNodes(projectId));
+  const sessions = summarizeSessions(roots, Date.now());
+  const selectedId = sessionId && sessions.some(s => s.id === sessionId) ? sessionId : defaultSessionId(sessions);
+  return { sessions, selectedId, tree: roots.find(root => root.id === selectedId) ?? null };
+}
+
+async function loadAgentNodes(projectId: string): Promise<BMadAgentTreeNode[]> {
   const res = await query<{
     id: string;
     project_id: string;
@@ -412,9 +490,7 @@ export async function getBMadAgentTree(projectId: string): Promise<BMadAgentTree
     [projectId]
   );
 
-  if (res.rows.length === 0) return null;
-
-  const nodes: BMadAgentTreeNode[] = res.rows.map(row => ({
+  return res.rows.map(row => ({
     id: row.id,
     projectId: row.project_id,
     taskId: row.task_id,
@@ -432,6 +508,4 @@ export async function getBMadAgentTree(projectId: string): Promise<BMadAgentTree
     timestamp: row.timestamp.toISOString(),
     children: [],
   }));
-
-  return pickAgentTree(nodes);
 }

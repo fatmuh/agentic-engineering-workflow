@@ -16,26 +16,41 @@ import {
 } from "./board-load";
 import { WorktreeTree } from "./worktree-tree";
 import {
-  demoWorktreeRun,
   bmadNodeToWorktreeNode,
+  formatTokens,
   type WorktreeNode,
 } from "./worktree-tree-data";
-import { Kanban, GitBranch, Filter } from "@/components/icons";
+import { formatClock } from "./agent-board-data";
+import { Kanban, GitBranch, ChevronDown, Copy, RefreshCw } from "@/components/icons";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel,
+  DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button-clean";
-import { FilterMenu } from "@/components/ui/filter-menu-clean";
-import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl } from "@/components/ui/segmented-control-clean";
 import { apiFetch } from "@/lib/api";
 import type { BMadAgentTreeNode, BMadTaskItem } from "@/lib/bmad";
+import type { AgentSessionSummary } from "@/lib/agent-tree";
 import { useActiveProject } from "./project-context";
 import { WORKSPACE_LIST_FAILED } from "./workspace-switcher-state";
-import { useAnnounce } from "./announcement-context";
 import "./search-filter-controls.css";
 
 /** `ProjectSnapshot` (and the `LoadState` halves it carries) lives in
  *  `board-load.ts`: the token rule and the per-request state mapping are pure
  *  there, so they run under the node-environment unit suite. */
-type ProjectSnapshot = BoardSnapshot<AgentTask, WorktreeNode>;
+/** A session as the picker shows it; the label is built when the response
+ *  arrives, so rendering stays free of clock reads. */
+type WorktreeSession = AgentSessionSummary & { label: string; detail: string };
+
+/** The Worktree half of a load: every session, and the tree of one of them. */
+interface WorktreeView {
+  run: WorktreeNode | null;
+  sessions: WorktreeSession[];
+  selectedId: string | null;
+}
+
+type ProjectSnapshot = BoardSnapshot<AgentTask, WorktreeView>;
 
 /** Read one request as a `Loaded<T>`: transport failure, a non-2xx status, an
  *  unparseable body, and a body of the wrong shape all mean "this request
@@ -72,20 +87,35 @@ function parseTasks(body: unknown): AgentTask[] {
 /** `GET /agent-tree` answers a node object or `null` when the project has no
  *  tree. Anything else is a failed read, not an empty tree — a `{error}` body
  *  rendered as "Belum ada pohon agen" would claim the project has no agents. */
-function parseTree(body: unknown): WorktreeNode | null {
-  if (body === null) return null;
-  if (typeof body !== "object" || typeof (body as { id?: unknown }).id !== "string") {
-    throw new Error("Unexpected /agent-tree payload");
-  }
-  return bmadNodeToWorktreeNode(body as BMadAgentTreeNode);
+const SESSION_WORD: Record<AgentSessionSummary["status"], string> = { live: "live", idle: "idle", ended: "ended" };
+
+/** "live since 08:37 · 13.3k tokens", "ended 08:44 · 54.1k tokens". */
+function sessionDetail(session: AgentSessionSummary, now: Date): string {
+  const time = session.status === "ended" ? session.lastActivityAt : session.startedAt;
+  const when = session.status === "ended" ? `ended ${formatClock(time, now)}` : `${SESSION_WORD[session.status]} since ${formatClock(time, now)}`;
+  return `${when} · ${formatTokens(session.totalTokens)}`;
 }
 
-/** The Worktree tab's tree source. One option is the workspace's own data and
- *  the other is the static sample in `worktree-tree-data.ts`, so the control is
- *  named for what it selects — calling both "contoh" would mislabel the live
- *  one. Each label says which is which before the choice is made. */
-const WORKTREE_SOURCE_LIVE = "Pohon BMad langsung · database";
-const WORKTREE_SOURCE_DEMO = "Contoh · Halaman harga · 3 cabang";
+function parseWorktree(body: unknown): WorktreeView {
+  const value = body as { sessions?: unknown; selectedId?: unknown; tree?: unknown } | null;
+  if (!value || typeof value !== "object" || !Array.isArray(value.sessions)) {
+    throw new Error("Unexpected /agent-tree?sessions=1 payload");
+  }
+  const tree = value.tree as BMadAgentTreeNode | null;
+  if (tree !== null && (typeof tree !== "object" || typeof tree.id !== "string")) {
+    throw new Error("Unexpected /agent-tree payload");
+  }
+  const now = new Date();
+  return {
+    run: tree ? bmadNodeToWorktreeNode(tree) : null,
+    sessions: (value.sessions as AgentSessionSummary[]).map(session => {
+      const detail = sessionDetail(session, now);
+      return { ...session, detail, label: `${session.name} · ${detail}` };
+    }),
+    selectedId: typeof value.selectedId === "string" ? value.selectedId : null,
+  };
+}
+
 
 /** One notice for every state inside the board panels. Three grey blocks that
  *  each picked their own role and padding drifted apart (status/status/note,
@@ -143,8 +173,54 @@ function WorkspaceListRetry({ onRetry }: { onRetry: () => void }) {
         onRetry();
       }}
     >
-      Coba lagi
+      Try again
     </Button>
+  );
+}
+
+const SESSION_STATUS: Record<AgentSessionSummary["status"], { label: string; dot: string }> = {
+  live: { label: "Live", dot: "bg-[var(--agent-done)] motion-safe:animate-pulse" },
+  idle: { label: "Idle", dot: "bg-[var(--agent-waiting)]" },
+  ended: { label: "Ended", dot: "bg-muted-foreground/50" },
+};
+
+/** Whether the chosen session is running, waiting for a prompt, or over. */
+function SessionStatus({ status }: { status: AgentSessionSummary["status"] }) {
+  const { label, dot } = SESSION_STATUS[status];
+  return (
+    <span data-session-status={status} className="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs font-medium text-muted-foreground">
+      <span aria-hidden="true" className={`size-1.5 rounded-full ${dot}`} />
+      {label}
+    </span>
+  );
+}
+
+const HOOK_COMMAND = "bmad-monitor hook-settings";
+
+/** No session has ever reported here: say how to make one appear. */
+function WorktreeEmptyState() {
+  const copy = () => {
+    navigator.clipboard.writeText(HOOK_COMMAND).then(
+      () => toast.success("Command copied"),
+      () => toast.error(`Couldn't copy. Run: ${HOOK_COMMAND}`),
+    );
+  };
+  return (
+    <div data-worktree-empty className="rounded-[14px] bg-muted/50 px-5 py-6 text-sm">
+      <h2 className="font-medium">No agent sessions yet</h2>
+      <p className="mt-1 text-muted-foreground">Sessions appear here once the Claude Code hook reports to this workspace.</p>
+      <ol className="mt-3 grid list-decimal gap-2 ps-5 text-muted-foreground">
+        <li>
+          <span>Install the hook on the developer machine and merge its output into <code className="text-xs">~/.claude/settings.json</code>:</span>
+          <span className="mt-1.5 flex flex-wrap items-center gap-2">
+            <code className="rounded-md bg-background px-2 py-1 font-mono text-xs text-foreground ring-1 ring-border">{HOOK_COMMAND}</code>
+            <Button size="sm" variant="secondary" icon={<Copy />} onClick={copy}>Copy</Button>
+          </span>
+        </li>
+        <li>Start Claude Code in the repository linked to this workspace.</li>
+        <li>Move a ticket to in progress to see its work and tokens under the session.</li>
+      </ol>
+    </div>
   );
 }
 
@@ -159,22 +235,23 @@ export function AgentBoardView() {
     ids: [],
   });
   const [justMoved, setJustMoved] = useState<{ projectId: string; id: string } | null>(null);
-  // Write-only: the live region itself lives in `DashboardShell`, so a
-  // workspace switch made from any route is announced. `announce` is not a
-  // React setter — writing the same sentence twice is a new announcement.
-  const announce = useAnnounce();
   const [tab, setTab] = useState<"board" | "worktree">("board");
-  const [worktreeSource, setWorktreeSource] = useState("live");
+  // The session the user picked in the Worktree, per project. A ref, not
+  // state: the server answers with the session it actually chose (`selectedId`)
+  // and that is what renders; the pick only shapes the next request.
+  const sessionChoice = useRef<{ projectId: string; id: string } | null>(null);
 
   const current = snapshot && snapshot.projectId === projectId ? snapshot : null;
   const tasks = current?.tasks ?? [];
-  const worktreeRun = current?.worktreeRun ?? null;
+  const worktree = current?.worktreeRun ?? null;
+  const worktreeRun = worktree?.run ?? null;
+  const sessions = worktree?.sessions ?? [];
+  const selectedSession = sessions.find(session => session.id === worktree?.selectedId) ?? null;
   // Two independent states: each half of the board reports only its own
   // request, so one failing never marks the other as failed.
   const projectLoadState: LoadState = projectStatus === "error" ? "error" : "loading";
   const tasksState: LoadState = current?.tasksState ?? projectLoadState;
   const treeState: LoadState = current?.treeState ?? projectLoadState;
-  const lastSyncTime = current?.lastSyncTime ?? null;
   const openIds = openState.projectId === projectId ? openState.ids : [];
   const justMovedId = justMoved && justMoved.projectId === projectId ? justMoved.id : null;
 
@@ -203,6 +280,8 @@ export function AgentBoardView() {
 
   const loadProjectData = useCallback(async (id: string) => {
     const segment = encodeURIComponent(id);
+    const choice = sessionChoice.current;
+    const sessionParam = choice && choice.projectId === id ? `&session=${encodeURIComponent(choice.id)}` : "";
     // The pre-existing project guard, kept alongside the token: a response for
     // a project the panel no longer shows is never current.
     const isStale = () => projectIdRef.current !== id;
@@ -219,9 +298,9 @@ export function AgentBoardView() {
         apiFetch(`/api/projects/${segment}/tasks`, { cache: "no-store" }),
         parseTasks,
       ),
-      tree: readLoaded<WorktreeNode | null>(
-        apiFetch(`/api/projects/${segment}/agent-tree`, { cache: "no-store" }),
-        parseTree,
+      tree: readLoaded<WorktreeView>(
+        apiFetch(`/api/projects/${segment}/agent-tree?sessions=1${sessionParam}`, { cache: "no-store" }),
+        parseWorktree,
       ),
     });
     // A superseded load writes NOTHING: no snapshot, no lastSyncTime, and no
@@ -271,6 +350,12 @@ export function AgentBoardView() {
     return () => clearTimeout(timer);
   }, [justMoved]);
 
+  const chooseSession = (id: string) => {
+    if (!projectId) return;
+    sessionChoice.current = { projectId, id };
+    void loadProjectData(projectId);
+  };
+
   const toggle = (id: string) => {
     if (!projectId) return;
     const owner = projectId;
@@ -283,107 +368,6 @@ export function AgentBoardView() {
     });
   };
 
-  const closeCard = (owner: string, id: string) => {
-    setOpenState(previous => (previous.projectId === owner
-      ? { projectId: owner, ids: previous.ids.filter(item => item !== id) }
-      : previous));
-  };
-
-  const patchTaskLocally = (owner: string, id: string, patch: Partial<AgentTask>) => {
-    setSnapshot(previous => (previous && previous.projectId === owner
-      ? {
-          ...previous,
-          tasks: previous.tasks.map(item => (item.id === id ? { ...item, ...patch } : item)),
-        }
-      : previous));
-  };
-
-  const approve = async (id: string) => {
-    if (!projectId) return;
-    const owner = projectId;
-    const task = tasks.find(item => item.id === id);
-    if (!task) return;
-
-    // Optimistic UI update
-    patchTaskLocally(owner, id, {
-      state: "running",
-      stage: "in_progress",
-      approvalStatus: "approved",
-      steps: [
-        ...task.steps,
-        { text: "Disetujui oleh reviewer di Web Dashboard", time: "sekarang" },
-      ],
-    });
-    closeCard(owner, id);
-    setJustMoved({ projectId: owner, id });
-    announce(`${task.title} disetujui dan dialihkan ke Running.`);
-
-    // Persist to the active workspace's project — the same one the board shows.
-    try {
-      const res = await apiFetch(`/api/projects/${encodeURIComponent(owner)}/tasks/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stage: "in_progress",
-          approvalStatus: "approved",
-          addStep: "Disetujui oleh reviewer di Web Dashboard",
-        }),
-      });
-      // apiFetch only resolves the transport; a 4xx/5xx is a resolved response.
-      // Without this check the optimistic card would silently agree to a write
-      // that never happened.
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      void loadProjectData(owner);
-    } catch (err) {
-      console.error("[BMad Monitor] Gagal memperbarui status approval:", err);
-      void loadProjectData(owner);
-      announce(`Gagal menyetujui ${task.title}. Perubahan dibatalkan.`);
-    }
-  };
-
-  const reject = async (id: string) => {
-    if (!projectId) return;
-    const owner = projectId;
-    const task = tasks.find(item => item.id === id);
-    if (!task) return;
-
-    const reason = window.prompt("Masukkan alasan penolakan (opsional):", "") || "Ditolak dari Web Dashboard";
-
-    // Optimistic UI update
-    patchTaskLocally(owner, id, {
-      state: "failed",
-      stage: "rejected",
-      approvalStatus: "rejected",
-      rejectionReason: reason,
-      steps: [
-        ...task.steps,
-        { text: `Ditolak oleh reviewer: ${reason}`, time: "sekarang" },
-      ],
-    });
-    closeCard(owner, id);
-    announce(`${task.title} ditolak.`);
-
-    // Persist to the active workspace's project — the same one the board shows.
-    try {
-      const res = await apiFetch(`/api/projects/${encodeURIComponent(owner)}/tasks/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stage: "rejected",
-          approvalStatus: "rejected",
-          rejectionReason: reason,
-          addStep: `Ditolak oleh reviewer: ${reason}`,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      void loadProjectData(owner);
-    } catch (err) {
-      console.error("[BMad Monitor] Gagal menolak task:", err);
-      void loadProjectData(owner);
-      announce(`Gagal menolak ${task.title}. Perubahan dibatalkan.`);
-    }
-  };
-
   // The project-level branch is shared: with no workspace selected, both tabs
   // must report the workspace list's state rather than claim their own data is
   // still loading forever (a failing `/api/projects` never produces an id).
@@ -392,8 +376,8 @@ export function AgentBoardView() {
   // rendered once, by `projectListNotice` below, with its recovery. Both panels
   // suppress the messages that would otherwise repeat it.
   const projectMessage = projectStatus === "ready"
-    ? "Belum ada workspace terdaftar."
-    : "Memuat workspace…";
+    ? "No workspaces yet."
+    : "Loading workspaces…";
 
   // Each tab reads its OWN half of the snapshot, never the pair. The failure
   // copy must also appear when data from the last successful sync is still on
@@ -404,15 +388,15 @@ export function AgentBoardView() {
   const treeRetained = worktreeRun !== null;
 
   const boardEmptyMessage = tasksRetained
-    ? "Gagal memperbarui task workspace ini. Menampilkan data dari sync terakhir yang berhasil."
-    : "Gagal memuat task workspace ini. Periksa koneksi database lalu tekan Refresh.";
+    ? "Couldn't refresh this workspace's tasks. Showing data from the last successful sync."
+    : "Couldn't load this workspace's tasks. Check the database connection, then press Refresh.";
   const emptyMessage = !projectId
     ? projectMessage
     : tasksState === "loading"
-      ? "Memuat task workspace…"
+      ? "Loading workspace tasks…"
       : tasksState === "error"
         ? boardEmptyMessage
-        : `Belum ada task di workspace ${project?.name ?? "ini"}. Task yang dilaporkan agent akan muncul di sini.`;
+        : `No tasks in ${project?.name ?? "this workspace"} yet. Tasks reported by agents will appear here.`;
 
   // A failed project list is recoverable in place. `reload()` is the context's
   // single recovery path — the same one the switcher's "Coba lagi" uses — so
@@ -443,12 +427,12 @@ export function AgentBoardView() {
   const worktreeEmptyMessage = !projectId
     ? projectMessage
     : treeState === "loading"
-      ? "Memuat pohon agen…"
+      ? "Loading the agent tree…"
       : treeState === "error"
         ? treeRetained
-          ? "Gagal memperbarui pohon agen workspace ini. Menampilkan pohon dari sync terakhir yang berhasil."
-          : "Gagal memuat pohon agen workspace ini."
-        : `Belum ada pohon agen di workspace ${project?.name ?? "ini"}.`;
+          ? "Couldn't refresh this workspace's agent tree. Showing the tree from the last successful sync."
+          : "Couldn't load this workspace's agent tree."
+        : `No agent tree in ${project?.name ?? "this workspace"} yet.`;
 
   return (
     // `tabIndex={-1}` makes the section focusable as a programme target only:
@@ -470,31 +454,41 @@ export function AgentBoardView() {
           ]}
         />
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {/* `data-sync-state` mirrors the dot for tests: the dot is
-              decorative (`aria-hidden`), so its colour is not observable. */}
-          <span
-            data-sync-state={syncingFor === projectId && projectId !== null ? "syncing" : "idle"}
-            className={`inline-block size-2 rounded-full ${
-              syncingFor === projectId && projectId !== null ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
-            }`}
-            aria-hidden="true"
-          />
-          <span>BMad Monitor Live Sync</span>
-          {project && <span className="text-[11px] opacity-75">· {project.name}</span>}
-          {lastSyncTime && <span className="text-[11px] opacity-75">· {lastSyncTime}</span>}
+          {/* The id links a repo to this workspace (awm_project_init with
+              projectId), so it sits where people look while working on it. */}
+          {project && (
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(project.id).then(
+                  () => toast.success("Project ID copied"),
+                  () => toast.error(`Couldn't copy. Project ID: ${project.id}`),
+                );
+              }}
+              className="inline-flex cursor-pointer items-center gap-1 rounded px-1 font-mono text-[11px] opacity-75 hover:bg-muted hover:opacity-100"
+              title="Copy project ID"
+              aria-label={`Copy project ID ${project.id}`}
+            >
+              <Copy className="size-3" aria-hidden="true" />
+              {project.id}
+            </button>
+          )}
           {/* With no project id there is nothing to refetch HERE — the thing
-              that failed was `/api/projects`, and the board's Refresh used to
-              be silently inert in exactly that state. Naming the button's real
-              job in that case is better than a dead control beside a notice
-              that asks the user to recover. */}
-          <button
-            type="button"
+              that failed was `/api/projects`, so the button reloads the list
+              instead of being a dead control beside the recovery notice.
+              `data-sync-state` is the board's live-sync indicator: the icon
+              turns while a load (a poll or a click) is in flight. */}
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<RefreshCw />}
+            data-sync-state={syncingFor === projectId && projectId !== null ? "syncing" : "idle"}
+            className="data-[sync-state=syncing]:[&_svg]:motion-safe:animate-spin"
             onClick={() => { if (projectId) void loadProjectData(projectId); else reload(); }}
-            className="ms-1 cursor-pointer underline hover:text-foreground"
-            title={projectId ? "Muat ulang data BMad" : "Muat ulang daftar workspace"}
+            title={projectId ? "Reload BMad data" : "Reload the workspace list"}
           >
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -516,13 +510,8 @@ export function AgentBoardView() {
               openIds={openIds}
               justMovedId={justMovedId}
               onToggle={toggle}
-              onApprove={approve}
-              onReject={reject}
             />
           )}
-          <p className="mt-4 text-xs text-muted-foreground">
-            Terhubung langsung ke database BMad Monitor · Perubahan Approve/Reject langsung terbaca oleh sesi agent di T3 Code CLI.
-          </p>
         </div>
 
         <div
@@ -533,58 +522,54 @@ export function AgentBoardView() {
           hidden={tab !== "worktree"}
           className="mt-2 min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <div className="search-filter-controls mb-4">
-            <Popover>
-              <PopoverTrigger render={<Button size="lg" variant="secondary" className="search-filter-trigger" icon={<Filter />} aria-label="Sumber pohon Worktree" />}>
-                {worktreeSource === "live" ? WORKTREE_SOURCE_LIVE : WORKTREE_SOURCE_DEMO}
-              </PopoverTrigger>
-              <PopoverContent unstyled align="start" className="search-filter-popover">
-                <PopoverTitle className="sr-only">Pilih sumber pohon Worktree</PopoverTitle>
-                <FilterMenu title="Sumber pohon" selectionMode="single"
-                  groups={[{ id: "scenario", label: "Sumber", options: [
-                    { id: "live", label: WORKTREE_SOURCE_LIVE },
-                    { id: "pricing", label: WORKTREE_SOURCE_DEMO },
-                  ] }]}
-                  value={{ scenario: [worktreeSource] }}
-                  onChange={value => { if (value.scenario?.[0]) setWorktreeSource(value.scenario[0]); }} />
-              </PopoverContent>
-            </Popover>
-          </div>
+          {sessions.length > 0 && (
+            <div className="search-filter-controls mb-4 flex flex-wrap items-center gap-2">
+              {/* A single choice, so a radio menu like the workspace switcher:
+                  the visible label is the trigger's accessible name (WCAG
+                  2.5.3), with a hidden prefix saying what it picks. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="lg" variant="secondary" className="search-filter-trigger" icon={<GitBranch />} iconRight={<ChevronDown />} />}>
+                  <span className="sr-only">Session: </span>{selectedSession?.label ?? "Choose a session"}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" sideOffset={4} className="w-[min(360px,calc(100vw-32px))]">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Sessions, newest first</DropdownMenuLabel>
+                    <div className="custom-scrollbar max-h-[calc(5*48px)] overflow-y-auto overscroll-contain">
+                      <DropdownMenuRadioGroup value={selectedSession?.id ?? ""} onValueChange={id => { if (id) chooseSession(String(id)); }}>
+                        {sessions.map(session => (
+                          <DropdownMenuRadioItem key={session.id} value={session.id} label={session.name} closeOnClick className="min-h-12 items-start py-1.5">
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate">{session.name}</span>
+                              <span className="truncate text-xs text-muted-foreground">{session.detail}</span>
+                            </span>
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </div>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {selectedSession && <SessionStatus status={selectedSession.status} />}
+            </div>
+          )}
 
-          {tab === "worktree" && (worktreeSource === "live"
-            ? (
-              <>
-                {/* Rendered ABOVE the tree, not instead of it: when the last
-                    sync succeeded and this one failed, the tree on screen is
-                    stale and the user must be told so. A failed project list is
-                    the exception — its own notice already says it. */}
-                {treeState === "error" && !projectListBlocked && (
-                  <div className="mb-2"><BoardNotice tone="status">{worktreeEmptyMessage}</BoardNotice></div>
-                )}
-                {worktreeRun
-                  // Keyed by project so the tree's open/focus state resets on a switch.
-                  ? <WorktreeTree key={`live-${projectId ?? "none"}`} run={worktreeRun} />
+          {tab === "worktree" && (
+            <>
+              {/* Rendered ABOVE the tree, not instead of it: when the last
+                  sync succeeded and this one failed, the tree on screen is
+                  stale and the user must be told so. A failed project list is
+                  the exception — its own notice already says it. */}
+              {treeState === "error" && !projectListBlocked && (
+                <div className="mb-2"><BoardNotice tone="status">{worktreeEmptyMessage}</BoardNotice></div>
+              )}
+              {worktreeRun
+                // Keyed by session so the tree's open/focus state resets on a switch.
+                ? <WorktreeTree key={`live-${projectId ?? "none"}-${selectedSession?.id ?? "none"}`} run={worktreeRun} />
+                : treeState === "ready" && sessions.length === 0
+                  ? <WorktreeEmptyState />
                   : treeState !== "error" && !projectListBlocked && <BoardNotice tone="status">{worktreeEmptyMessage}</BoardNotice>}
-              </>
-            )
-            : (
-              // The tree's container describes itself with the caveat, so a
-              // screen reader reading the tree meets the label too — a sibling
-              // `<p>` would be skipped by anyone navigating straight to the tree.
-              <section aria-label="Pohon contoh" aria-describedby="worktree-sample-note">
-                <div className="mb-2">
-                  <BoardNotice tone="sample" describeId="worktree-sample-note">
-                    {project
-                      ? "Data contoh, bukan data database. Pohon ini hanya untuk melihat tampilan dan tidak berasal dari workspace " + project.name + "."
-                      : "Data contoh, bukan data database. Pohon ini hanya untuk melihat tampilan; belum ada workspace aktif yang bisa menjadi sumbernya."}
-                  </BoardNotice>
-                </div>
-                <WorktreeTree key={`pricing-${projectId ?? "none"}`} run={demoWorktreeRun} />
-              </section>
-            ))}
-          <p className="mt-4 text-xs text-muted-foreground">
-            Pohon agen BMad Monitor real-time · Metrik Token Usage (input, output, cache) dilaporkan secara otomatis oleh sub-agent.
-          </p>
+            </>
+          )}
         </div>
       </div>
     </section>

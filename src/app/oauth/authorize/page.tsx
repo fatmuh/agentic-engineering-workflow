@@ -9,7 +9,7 @@ import {
 } from "@/lib/oauth";
 
 export const metadata: Metadata = {
-  title: "Otorisasi MCP — Onyx",
+  title: "MCP Authorization — Onyx",
 };
 
 /**
@@ -54,11 +54,11 @@ export default async function OAuthAuthorizePage({
 
   if (!parsed.ok) {
     return (
-      <NoticeCard title="Permintaan Otorisasi Tidak Valid">
+      <NoticeCard title="Invalid Authorization Request">
         <p>
           {parsed.errorDescription} (<code className="text-xs">{parsed.error}</code>).
         </p>
-        <p>Jalankan ulang login dari BMad Monitor untuk meminta URL otorisasi yang baru.</p>
+        <p>Run login from BMad Monitor again to request a new authorization URL.</p>
       </NoticeCard>
     );
   }
@@ -71,10 +71,10 @@ export default async function OAuthAuthorizePage({
 
   if (user.status !== "Active") {
     return (
-      <NoticeCard title="Belum Ada Izin">
+      <NoticeCard title="No Permission Yet">
         <p>
-          Akun Anda belum memiliki izin / allowance untuk mengakses BMad Workspace
-          ini. Hubungi admin tim.
+          Your account does not have permission (allowance) to access this BMad
+          Workspace yet. Contact your team admin.
         </p>
       </NoticeCard>
     );
@@ -98,22 +98,22 @@ export default async function OAuthAuthorizePage({
       <div className="space-y-4">
         <div className="space-y-1">
           <p className="text-[11px] font-medium uppercase tracking-widest text-neutral-400 dark:text-neutral-500">
-            Otorisasi Aplikasi
+            Application Authorization
           </p>
           <h1 className="text-lg font-semibold tracking-tight">BMad Monitor MCP</h1>
         </div>
 
         <p className="text-[13px] leading-relaxed text-neutral-600 dark:text-neutral-400">
-          Aplikasi <span className="font-medium text-neutral-900 dark:text-neutral-100">bmad-mcp-cli</span>{" "}
-          di perangkat ini meminta akses ke akun{" "}
+          The <span className="font-medium text-neutral-900 dark:text-neutral-100">bmad-mcp-cli</span>{" "}
+          app on this device is requesting access to the account{" "}
           <span className="font-medium text-neutral-900 dark:text-neutral-100">{user.email}</span>.
         </p>
 
         <ul className="space-y-1.5 rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 text-[12.5px] leading-relaxed text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-400">
-          <li>· Melaporkan progres agent dan pohon agent ke dashboard</li>
-          <li>· Membuat project serta tiket Kanban atas nama Anda</li>
-          <li>· Membaca vault provider LLM tim dan pribadi</li>
-          <li>· Menunggu persetujuan task yang Anda review di web</li>
+          <li>· Report agent progress and the agent tree to the dashboard</li>
+          <li>· Create projects and Kanban tickets on your behalf</li>
+          <li>· Read the team and personal LLM provider vault</li>
+          <li>· Wait for approval of tasks you review on the web</li>
         </ul>
 
         <form action="/api/oauth/authorize" method="POST" className="space-y-2.5">
@@ -133,12 +133,12 @@ export default async function OAuthAuthorizePage({
             type="submit"
             className="flex h-[36px] w-full items-center justify-center rounded-lg border border-neutral-200 text-[13px] font-medium text-neutral-700 transition-colors hover:bg-neutral-50 active:bg-neutral-100 cursor-pointer dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-900"
           >
-            Tolak
+            Deny
           </button>
         </form>
 
         <p className="text-[11.5px] text-neutral-400 dark:text-neutral-500">
-          Menolak mengembalikan Anda ke terminal tanpa memberikan akses.
+          Denying returns you to the terminal without granting access.
         </p>
       </div>
     </AuthShell>

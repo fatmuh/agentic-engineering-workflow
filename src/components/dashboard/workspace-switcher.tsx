@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Plus } from "@/components/icons";
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { toast } from "sonner";
+import { ChevronDown, Copy, Plus, Search } from "@/components/icons";
 import { Button } from "@/components/ui/button-clean";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
@@ -45,8 +47,29 @@ export function WorkspaceSwitcher({
   // renders `DropdownMenuLabel` as `aria-hidden` div and names the group with
   // it (`aria-labelledby`), and a `<p>` is not valid content inside a menu
   // group. One string keeps the visual note and the accessible name in step.
-  const groupLabel = copy.note ? `Ganti workspace · ${copy.note}` : "Ganti workspace";
-  return (
+  const groupLabel = copy.note ? `Switch workspace · ${copy.note}` : "Switch workspace";
+  // Up to this many rows the whole list fits; beyond it the list scrolls and
+  // a search field appears, so the menu never grows past the screen.
+  const searchable = workspaces.length > VISIBLE_ROWS;
+  const copyActiveId = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success("Project ID copied");
+    } catch {
+      toast.error(`Couldn't copy. Project ID: ${value}`);
+    }
+  };
+  const radios = (
+    <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+      {workspaces.map(workspace => (
+        <DropdownMenuRadioItem key={workspace.id} value={workspace.id} label={workspace.name} closeOnClick onClick={() => setOpen(false)}>
+          <span className="workspace-switcher-mark" aria-hidden="true">{workspace.name.slice(0, 1)}</span>
+          <span className="workspace-switcher-details"><span>{workspace.name}</span><span className="workspace-switcher-plan">{workspace.plan}</span></span>
+        </DropdownMenuRadioItem>
+      ))}
+    </DropdownMenuRadioGroup>
+  );
+  const menu = (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <style href="workspace-switcher-clean" precedence="default">{css}</style>
       {/* Never disabled: the menu still opens while the list loads or after it
@@ -56,35 +79,52 @@ export function WorkspaceSwitcher({
         {collapsed ? null : copy.trigger}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={4} className="workspace-switcher-menu">
+        {searchable && (
+          <label className="workspace-switcher-search">
+            <Search aria-hidden="true" />
+            <MenuPrimitive.Input placeholder="Search workspaces…" aria-label="Search workspaces" autoComplete="off" spellCheck={false} />
+          </label>
+        )}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="workspace-switcher-label" data-state-note={copy.note ? "" : undefined}>
             {groupLabel}
           </DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
-            {workspaces.map(workspace => (
-              <DropdownMenuRadioItem key={workspace.id} value={workspace.id} closeOnClick onClick={() => setOpen(false)}>
-                <span className="workspace-switcher-mark" aria-hidden="true">{workspace.name.slice(0, 1)}</span>
-                <span className="workspace-switcher-details"><span>{workspace.name}</span><span className="workspace-switcher-plan">{workspace.plan}</span></span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
+          {/* List and Empty belong to Base UI's filter, which is only mounted
+              with the search field; a short list is a plain scroll box. */}
+          {searchable ? (
+            <MenuPrimitive.List className="workspace-switcher-list custom-scrollbar">{radios}</MenuPrimitive.List>
+          ) : (
+            <div className="workspace-switcher-list custom-scrollbar">{radios}</div>
+          )}
+          {searchable && <MenuPrimitive.Empty className="workspace-switcher-empty">No matching workspaces.</MenuPrimitive.Empty>}
         </DropdownMenuGroup>
         {(status === "error" && onRetry) && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={onRetry}>Coba lagi</DropdownMenuItem>
+              <DropdownMenuItem onClick={onRetry}>Try again</DropdownMenuItem>
             </DropdownMenuGroup>
           </>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled={!onCreate} onClick={onCreate}><Plus data-icon="inline-start" /><span>Buat workspace</span></DropdownMenuItem>
+          {value && (
+            <DropdownMenuItem onClick={copyActiveId} title={value}>
+              <Copy data-icon="inline-start" /><span>Copy project ID</span><span className="workspace-switcher-id">{value}</span>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem disabled={!onCreate} onClick={onCreate}><Plus data-icon="inline-start" /><span>Create workspace</span></DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
+  // Filtering only where the search field is shown: Base UI expects a
+  // filterable menu to have its <Menu.Input>.
+  return searchable ? <MenuPrimitive.FilterProvider autoHighlight>{menu}</MenuPrimitive.FilterProvider> : menu;
 }
+
+/** Rows shown before the list scrolls; more than this also shows search. */
+const VISIBLE_ROWS = 5;
 
 const css = /* css */ `
 .workspace-switcher-trigger.ui-buttonc { max-width: 100%; padding-inline: 4px; gap: 8px; }
@@ -124,6 +164,26 @@ const css = /* css */ `
 .workspace-switcher-plan { font-size: .75rem; color: var(--muted-foreground); }
 .workspace-switcher-menu [data-slot="dropdown-menu-radio-item"]:is(:focus, [data-highlighted]) .workspace-switcher-plan { color: var(--accent-foreground); }
 .workspace-switcher-menu [data-slot="dropdown-menu-separator"] { margin: 4px 0; background: var(--border); }
+/* Five 42px rows, then scroll. The thumb is the app's floating pill
+   (.custom-scrollbar in globals.css); no scrollbar-width here, since Chromium
+   ignores ::-webkit-scrollbar styles on an element that sets it. */
+.workspace-switcher-list { max-height: calc(${VISIBLE_ROWS} * 42px); overflow-y: auto; overscroll-behavior: contain; }
+.workspace-switcher-search {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 4px; padding: 0 8px; height: 32px;
+  border: 1px solid var(--border); border-radius: 7px; color: var(--muted-foreground); cursor: text;
+}
+.workspace-switcher-search:focus-within { border-color: var(--ring); }
+.workspace-switcher-search svg { width: 14px; height: 14px; flex: none; }
+.workspace-switcher-search input {
+  flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent;
+  color: var(--popover-foreground); font: inherit;
+}
+.workspace-switcher-search input::placeholder { color: var(--muted-foreground); }
+.workspace-switcher-empty { padding: 10px 8px; font-size: .8125rem; color: var(--muted-foreground); }
+.workspace-switcher-id {
+  margin-inline-start: auto; min-width: 0; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: .6875rem; color: var(--muted-foreground);
+}
 .workspace-switcher-menu [data-slot="dropdown-menu-radio-item-indicator"] { inset-inline-end: 8px; inset-inline-start: auto; }
 @media (hover: hover) {
   .workspace-switcher-menu [data-slot="dropdown-menu-radio-item"]:hover { background: var(--accent); color: var(--accent-foreground); }

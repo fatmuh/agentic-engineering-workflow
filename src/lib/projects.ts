@@ -36,6 +36,7 @@ import {
   NORMALIZED_WORKSPACE_SQL,
 } from "./db";
 import type { BMadProject } from "./bmad";
+import { nextFreeSlugSql, slugify } from "./project-slug.mjs";
 import {
   ProjectIdentityError,
   assertRemoteHasNoCredentials,
@@ -60,6 +61,8 @@ export interface ProjectRow {
   owner_id: string | null;
   team_id: string | null;
   created_at: Date;
+  /** NULL only for a row inserted outside the app after boot (tests, manual SQL). */
+  slug: string | null;
 }
 
 /** Input to {@link resolveProject}; both identity fields are optional but at
@@ -148,6 +151,7 @@ export function toProjectResponse(row: ProjectRow): BMadProject {
         ? null
         : redactRemoteCredentials(row.git_remote_url),
     workspacePath: row.workspace_path,
+    slug: row.slug ?? null,
     ownerId: row.owner_id,
     teamId: row.team_id,
     createdAt: row.created_at.toISOString(),
@@ -282,6 +286,41 @@ const RESOLVE_ATTEMPTS = 3;
 /** True when `error` is a unique violation raised by one of the identity
  *  indexes — the only violation this loop is allowed to treat as "someone else
  *  won the race and I should read their row". */
+/** A concurrent insert of the same name took the slug this one picked. The
+ *  slug is recomputed on retry, so the collision is never a user error. */
+export function isSlugViolation(error: unknown): boolean {
+  return isUniqueViolation(error) && asPgError(error).constraint === "uq_bmad_projects_slug";
+}
+
+/** Attempts for an insert whose only failure is a lost slug race. */
+const SLUG_ATTEMPTS = 3;
+
+/**
+ * Insert a project row with a fresh id and the first free slug for its name.
+ * `run` is a pool or a transaction's client. Outside a transaction a lost slug
+ * race is retried here; inside one the caller's own retry loop handles it,
+ * since the failed statement aborted the transaction.
+ */
+export async function insertProject(
+  run: { query: PoolClient["query"] },
+  values: { name: string; gitRemoteUrl: string | null; workspacePath: string | null },
+  { retry = true }: { retry?: boolean } = {}
+): Promise<ProjectRow> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await run.query<ProjectRow>(
+        `INSERT INTO bmad_projects (id, name, git_remote_url, workspace_path, slug)
+         VALUES ($1, $2, $3, $4, ${nextFreeSlugSql("$5::text")})
+         RETURNING *`,
+        [newProjectId(), values.name, values.gitRemoteUrl, values.workspacePath, slugify(values.name)]
+      );
+      return res.rows[0];
+    } catch (error) {
+      if (!retry || attempt >= SLUG_ATTEMPTS || !isSlugViolation(error)) throw error;
+    }
+  }
+}
+
 function isProjectIdentityViolation(error: unknown): boolean {
   if (!isUniqueViolation(error)) return false;
   const target = CONFLICT_TARGETS[asPgError(error).constraint ?? ""];
@@ -337,21 +376,18 @@ export async function resolveProject(
         return { project: toProjectResponse(existing), created: false };
       }
 
-      const inserted = await client.query<ProjectRow>(
-        `INSERT INTO bmad_projects (id, name, git_remote_url, workspace_path)
-         VALUES ($1, $2, $3, $4)
-         RETURNING *`,
-        [newProjectId(), name, gitRemoteUrl, workspacePath]
-      );
+      const inserted = await insertProject(client, { name, gitRemoteUrl, workspacePath }, { retry: false });
       await client.query("COMMIT");
-      return { project: toProjectResponse(inserted.rows[0]), created: true };
+      return { project: toProjectResponse(inserted), created: true };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       // Only an identity-index collision means "someone else won; read their
       // row on the next attempt". Any other failure — including a primary-key
       // clash on the generated id — is a real error and propagates, so this
       // loop can never mistake an unrelated violation for a resolvable race.
-      if (!isProjectIdentityViolation(error)) throw error;
+      // A lost slug race is resolved the same way: the next attempt picks a
+      // new slug (or finds the row, if the racer was the same workspace).
+      if (!isProjectIdentityViolation(error) && !isSlugViolation(error)) throw error;
     } finally {
       client.release();
     }

@@ -29,13 +29,13 @@ const ADMIN_EMAIL = "workspace-switcher-admin@e2e.test";
 /** The key `project-context.tsx` persists the active project id under. */
 const ACTIVE_PROJECT_KEY = "bmad-monitor.active-project-id";
 
-const TRIGGER_LOADING = "Memuat workspace…";
-const TRIGGER_ERROR = "Gagal memuat workspace";
-const TRIGGER_EMPTY = "Belum ada workspace";
-const MENU_LOADING = "Memuat daftar workspace…";
+const TRIGGER_LOADING = "Loading workspaces…";
+const TRIGGER_ERROR = "Couldn't load workspaces";
+const TRIGGER_EMPTY = "No workspaces";
+const MENU_LOADING = "Loading the workspace list…";
 /** The switcher's failure note and the board's notice are one shared sentence. */
 const MENU_ERROR = WORKSPACE_LIST_FAILED;
-const MENU_EMPTY = "Belum ada workspace terdaftar.";
+const MENU_EMPTY = "No workspaces yet.";
 /** The state clause is appended to the visible text (WCAG 2.5.3), so every
  *  accessible-name assertion below pins the pair, not just the clause. */
 const labelFor = (visible: string, clause: string) => `${visible} — ${clause}`;
@@ -134,7 +134,7 @@ async function pinActiveProject(page: Page, projectId: string): Promise<void> {
 
 // Case-insensitive: the state names start with their visible text, so they do
 // not all begin with "Ganti".
-const switcherTrigger = (page: Page) => page.getByRole("button", { name: /ganti workspace/i });
+const switcherTrigger = (page: Page) => page.getByRole("button", { name: /switch workspace/i });
 const switcherMenu = (page: Page) => page.locator('[data-slot="dropdown-menu-content"]');
 /** Sonner's toast card, matched by the sentence it shows. */
 const toastWith = (page: Page, text: string) =>
@@ -186,7 +186,7 @@ test("a failed project list is reported by the trigger and by the menu, and the 
   await expect(switcherTrigger(page)).toHaveText(TRIGGER_ERROR);
   await expect(switcherTrigger(page)).toHaveAttribute(
     "aria-label",
-    labelFor(TRIGGER_ERROR, "ganti workspace; daftar workspace gagal dimuat"),
+    labelFor(TRIGGER_ERROR, "switch workspace; couldn't load the workspace list"),
   );
 
   // The menu is still usable: it opens and explains the same failure.
@@ -195,7 +195,7 @@ test("a failed project list is reported by the trigger and by the menu, and the 
   await expect(switcherMenu(page)).toContainText(MENU_ERROR);
   await expect(page.getByRole("menuitemradio")).toHaveCount(0);
   // Recovery is offered here, not only by reloading the page.
-  await expect(page.getByRole("menuitem", { name: "Coba lagi" })).toBeEnabled();
+  await expect(page.getByRole("menuitem", { name: "Try again" })).toBeEnabled();
 });
 
 test("a pending project list shows loading copy and never blocks the menu", async ({ page }) => {
@@ -212,7 +212,7 @@ test("a pending project list shows loading copy and never blocks the menu", asyn
   await expect(switcherTrigger(page)).toHaveText(TRIGGER_LOADING);
   await expect(switcherTrigger(page)).toHaveAttribute(
     "aria-label",
-    labelFor(TRIGGER_LOADING, "ganti workspace; daftar workspace sedang dimuat"),
+    labelFor(TRIGGER_LOADING, "switch workspace; loading the workspace list"),
   );
   await expect(switcherTrigger(page)).toBeEnabled();
 
@@ -242,12 +242,12 @@ test("an empty project list says so instead of showing an empty trigger", async 
   await expect(switcherTrigger(page)).toHaveText(TRIGGER_EMPTY);
   await expect(switcherTrigger(page)).toHaveAttribute(
     "aria-label",
-    labelFor(TRIGGER_EMPTY, "ganti workspace; belum ada workspace terdaftar"),
+    labelFor(TRIGGER_EMPTY, "switch workspace; no workspaces yet"),
   );
   await switcherTrigger(page).click();
   await expect(switcherMenu(page)).toContainText(MENU_EMPTY);
-  // "Buat workspace" is the way out of an empty list, so it must be usable.
-  await expect(page.getByRole("menuitem", { name: /Buat workspace/ })).toBeEnabled();
+  // "Create workspace" is the way out of an empty list, so it must be usable.
+  await expect(page.getByRole("menuitem", { name: /Create workspace/ })).toBeEnabled();
 });
 
 test("creating a workspace from the switcher selects it and hands over its project id", async ({ page }, testInfo) => {
@@ -256,15 +256,15 @@ test("creating a workspace from the switcher selects it and hands over its proje
   await page.goto("/");
 
   await switcherTrigger(page).click();
-  await page.getByRole("menuitem", { name: /Buat workspace/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Buat workspace" });
-  await dialog.getByLabel("Nama").fill(fixture.name);
+  await page.getByRole("menuitem", { name: /Create workspace/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Create workspace" });
+  await dialog.getByLabel("Name").fill(fixture.name);
   // A Windows path, as typed on that machine: the API used to reject it.
   const stamp = fixture.id.slice("prj_e2e_switcher_create_".length);
-  await dialog.getByLabel("Path folder (opsional)").fill(`C:\\Users\\E2E\\${stamp}\\`);
-  await dialog.getByRole("button", { name: "Buat workspace" }).click();
+  await dialog.getByLabel("Folder path (optional)").fill(`C:\\Users\\E2E\\${stamp}\\`);
+  await dialog.getByRole("button", { name: "Create workspace" }).click();
 
-  const done = page.getByRole("dialog", { name: "Workspace dibuat" });
+  const done = page.getByRole("dialog", { name: "Workspace created" });
   await expect(done).toBeVisible();
   const id = (await done.locator("code").innerText()).trim();
   expect(id).toMatch(/^prj_[0-9a-f]{16}$/);
@@ -276,7 +276,7 @@ test("creating a workspace from the switcher selects it and hands over its proje
   );
   expect(rows).toEqual([{ name: fixture.name, workspace_path: `c:/users/e2e/${stamp.toLowerCase()}` }]);
 
-  await done.getByRole("button", { name: "Selesai" }).click();
+  await done.getByRole("button", { name: "Done" }).click();
   await expect(switcherTrigger(page)).toHaveText(fixture.name);
 });
 
@@ -300,7 +300,7 @@ test("switching workspace toasts in Indonesian and announces the new name to the
   await page.goto("/agent-board");
   await expect(page.getByRole("heading", { name: "Agent Board" })).toBeAttached();
   await expect(switcherTrigger(page)).toHaveText(first.name);
-  await expect(switcherTrigger(page)).toHaveAttribute("aria-label", labelFor(first.name, "ganti workspace"));
+  await expect(switcherTrigger(page)).toHaveAttribute("aria-label", labelFor(first.name, "switch workspace"));
 
   // Everything that leaves the page, so the no-op assertion below can count.
   const outgoing: string[] = [];
@@ -318,8 +318,8 @@ test("switching workspace toasts in Indonesian and announces the new name to the
   // reader actually hears.
   await switcherTrigger(page).click();
   await page.getByRole("menuitemradio", { name: new RegExp(second.name) }).click();
-  await expect(toastWith(page, `Beralih ke workspace ${second.name}`)).toBeVisible();
-  await expect(liveRegion(page)).toHaveText(`Beralih ke workspace ${second.name}.`);
+  await expect(toastWith(page, `Switched to workspace ${second.name}`)).toBeVisible();
+  await expect(liveRegion(page)).toHaveText(`Switched to workspace ${second.name}.`);
   await expect(switcherTrigger(page)).toHaveText(second.name);
 
   // The board is bound to the new workspace: its own tasks endpoint is what it
@@ -339,7 +339,7 @@ test("a live region mounted in the shell does not replay an old announcement aft
 
   await switcherTrigger(page).click();
   await page.getByRole("menuitemradio", { name: new RegExp(second.name) }).click();
-  await expect(liveRegion(page)).toHaveText(`Beralih ke workspace ${second.name}.`);
+  await expect(liveRegion(page)).toHaveText(`Switched to workspace ${second.name}.`);
 
   // Client-side navigation away and back: the region lives in the shell, so it
   // survives — the board remounting must show nothing rather than replay.
@@ -374,17 +374,17 @@ test("the collapsed sidebar carries the state in the accessible name alone", asy
   // (its cookie is written but never read back), so a reload would return to
   // the expanded branch and this icon-only branch would never render.
   await page.getByRole("button", { name: "Collapse sidebar (Cmd+B)" }).click();
-  const collapsedError = page.locator("aside").getByRole("button", { name: /ganti workspace/ });
+  const collapsedError = page.locator("aside").getByRole("button", { name: /switch workspace/ });
   await expect(collapsedError).toHaveText("");
   await expect(collapsedError).toHaveAttribute(
     "aria-label",
-    labelFor(TRIGGER_ERROR, "ganti workspace; daftar workspace gagal dimuat"),
+    labelFor(TRIGGER_ERROR, "switch workspace; couldn't load the workspace list"),
   );
 
   // Collapsed, the icon-only recovery is the ONLY place the failure is
   // visible — its accessible name has to carry both the sentence and the
   // action, since a bare icon says neither.
-  const collapsedRecovery = page.locator("aside").getByRole("button", { name: "Daftar workspace gagal dimuat. Coba lagi" });
+  const collapsedRecovery = page.locator("aside").getByRole("button", { name: "Couldn't load the workspace list. Try again" });
   await expect(collapsedRecovery).toBeVisible();
 
   // Count from the click, not from a baseline sample: see `reset`'s comment.
@@ -397,7 +397,7 @@ test("the collapsed sidebar carries the state in the accessible name alone", asy
   // back in the collapsed trigger's accessible name alone.
   await expect(collapsedError).toHaveAttribute(
     "aria-label",
-    labelFor(first.name, "ganti workspace"),
+    labelFor(first.name, "switch workspace"),
     { timeout: 15_000 },
   );
   await expect(collapsedRecovery).toHaveCount(0);
@@ -422,7 +422,7 @@ test("the sidebar's failure row announces itself once through a status region", 
   await expect(statusRegion).toHaveText(WORKSPACE_LIST_FAILED);
   await expect(statusRegion.getByRole("button")).toHaveCount(0);
 
-  const retry = page.locator("aside").getByRole("button", { name: "Coba lagi" });
+  const retry = page.locator("aside").getByRole("button", { name: "Try again" });
   const requestsBeforeRetry = projects.count();
   projects.release();
   await retry.click();
@@ -430,7 +430,7 @@ test("the sidebar's failure row announces itself once through a status region", 
   await expect(statusRegion).toHaveCount(0);
 });
 
-test("the Worktree tab opens on the database tree, and the sample tree is labelled when chosen", async ({ page }, testInfo) => {
+test("a Worktree with no reported session says how to get one, and never shows sample data", async ({ page }, testInfo) => {
   const project = projectFixture(testInfo.retry, "worktree", 1);
   await seedProjects([project]);
   await routeProjects(page, [project]);
@@ -440,55 +440,14 @@ test("the Worktree tab opens on the database tree, and the sample tree is labell
   await page.goto("/agent-board");
   await expect(page.getByRole("heading", { name: "Agent Board" })).toBeAttached();
 
-  // No agent node seeded: the database tree is empty, and the tab must say so
-  // rather than fall back to the sample fixture.
   await page.getByRole("tab", { name: "Worktree" }).click();
-  await expect(page.getByText(`Belum ada pohon agen di workspace ${project.name}.`, { exact: true })).toBeVisible();
+  const empty = page.locator("[data-worktree-empty]");
+  await expect(empty).toContainText("No agent sessions yet");
+  await expect(empty).toContainText("bmad-monitor hook-settings");
+  await expect(empty.getByRole("button", { name: "Copy" })).toBeVisible();
+  // No session picker without sessions, and no sample tree to fall back to.
+  await expect(page.getByRole("button", { name: /^Session:/ })).toHaveCount(0);
   await expect(page.getByText("Launch the new pricing page by Friday", { exact: true })).toHaveCount(0);
-
-  // The LIVE half is named in Indonesian before anything is opened: only the
-  // sample label is asserted later otherwise, and this is the half that could
-  // silently regress to English.
-  const sourceTrigger = page.getByRole("button", { name: "Sumber pohon Worktree" });
-  await expect(sourceTrigger).toContainText("Pohon BMad langsung · database");
-  await sourceTrigger.click();
-  await expect(page.getByRole("radio", { name: "Pohon BMad langsung · database", exact: true }))
-    .toHaveAttribute("aria-checked", "true");
-
-  // Choose the sample: the tree appears, and a visible line says it is sample
-  // data — not just an attribute. The tree's container describes itself with
-  // that line, so a screen reader reading the tree meets it too.
-  await page.getByRole("radio", { name: /Contoh · Halaman harga/ }).click();
-  await page.keyboard.press("Escape");
-
-  const sampleNote = page.locator("#worktree-sample-note");
-  await expect(sampleNote).toContainText("Data contoh, bukan data database.");
-  await expect(page.locator('section[aria-label="Pohon contoh"]')).toHaveAttribute(
-    "aria-describedby",
-    "worktree-sample-note",
-  );
-  await expect(page.getByText("Launch the new pricing page by Friday", { exact: true })).toBeVisible();
-  // The trigger now names the sample too, so the state is readable after the
-  // popover closes.
-  await expect(sourceTrigger).toContainText("Contoh · Halaman harga · 3 cabang");
-});
-
-test("the sample-data caveat has its own sentence when no workspace is active", async ({ page }) => {
-  await routeProjects(page, []);
-  await login(page, ADMIN_EMAIL);
-  await page.goto("/agent-board");
-  await expect(switcherTrigger(page)).toHaveText(TRIGGER_EMPTY);
-
-  await page.getByRole("tab", { name: "Worktree" }).click();
-  await page.getByRole("button", { name: "Sumber pohon Worktree" }).click();
-  await page.getByRole("radio", { name: /Contoh · Halaman harga/ }).click();
-  await page.keyboard.press("Escape");
-
-  // The workspace-name fallback used to read "... tidak berasal dari workspace
-  // ini", which parses wrong; with no project it gets a complete sentence.
-  const note = page.locator("#worktree-sample-note");
-  await expect(note).toContainText("belum ada workspace aktif");
-  await expect(note).not.toContainText("tidak berasal dari workspace");
 });
 
 /**
@@ -518,7 +477,10 @@ test("a failed project list is recoverable from the board without a page reload"
   page.on("framenavigated", frame => { if (frame === page.mainFrame()) navigations += 1; });
 
   await login(page, ADMIN_EMAIL);
-  await page.goto("/agent-board", { waitUntil: "domcontentloaded" });
+  // A URL that already names the workspace: plain /agent-board would, once the
+  // list loads, replace its URL with the workspace's (a same-document history
+  // entry, which `framenavigated` counts although nothing reloads).
+  await page.goto(`/agent-board/${first.id}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Agent Board" })).toBeAttached();
 
   const boardNotice = page.locator('[data-board-notice="status"]').filter({ hasText: WORKSPACE_LIST_FAILED });
@@ -526,25 +488,25 @@ test("a failed project list is recoverable from the board without a page reload"
   // The list is genuinely absent here, so the copy must say so and must not
   // claim anything is stale.
   await expect(boardNotice).toContainText(WORKSPACE_LIST_FAILED);
-  await expect(boardNotice).not.toContainText("mungkin sudah tidak terbaru");
+  await expect(boardNotice).not.toContainText("may be out of date");
   // One notice, not one per panel: the failure is project-level, and two
   // copies plus the sidebar row made three statements of one fact.
   await expect(page.locator('[data-board-notice="status"]')).toHaveCount(1);
   // The panel's own empty-state copy must not repeat the same news.
-  await expect(page.getByText("Memuat workspace…", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Loading workspaces…", { exact: true })).toHaveCount(0);
   // The old guidance sent the user to a full page reload. Scoped to the
   // notice, so unrelated future copy cannot make this pass or fail by accident.
-  await expect(boardNotice).not.toContainText(/muat ulang halaman/i);
+  await expect(boardNotice).not.toContainText(/reload the page/i);
 
   // The sidebar carries the same recovery next to the switcher, so the way out
   // is visible without opening the menu.
-  const sidebarRecovery = page.locator("aside").getByRole("button", { name: "Coba lagi" });
+  const sidebarRecovery = page.locator("aside").getByRole("button", { name: "Try again" });
   await expect(sidebarRecovery).toBeVisible();
 
   const requestsBeforeRetry = projects.count();
   const navigationsBeforeRetry = navigations;
   projects.release();
-  await boardNotice.getByRole("button", { name: "Coba lagi" }).click();
+  await boardNotice.getByRole("button", { name: "Try again" }).click();
 
   // "The retry worked" must be distinguishable from "the login page consumed
   // the failure": the click has to issue a NEW request.
@@ -570,7 +532,7 @@ test("the sidebar's recovery affordance is the same reload path", async ({ page 
   await page.goto("/");
   await expect(switcherTrigger(page)).toHaveText(TRIGGER_ERROR);
 
-  const sidebarRecovery = page.locator("aside").getByRole("button", { name: "Coba lagi" });
+  const sidebarRecovery = page.locator("aside").getByRole("button", { name: "Try again" });
   await expect(sidebarRecovery).toBeVisible();
 
   const requestsBeforeRetry = projects.count();
@@ -593,6 +555,8 @@ test("the sidebar's recovery affordance is the same reload path", async ({ page 
  * asserts both halves of the contract — the other tab follows without a
  * reload, and it does not write the value back.
  */
+// Off the Agent Board. On it the URL names the workspace, so a board tab keeps
+// its own (see "a board tab keeps the workspace its URL names").
 test("a second tab follows the workspace chosen in the first, without reloading or writing back", async ({ page, context }, testInfo) => {
   const [first, second] = [1, 2].map(index => projectFixture(testInfo.retry, "twotab", index));
   await seedProjects([first, second]);
@@ -612,7 +576,7 @@ test("a second tab follows the workspace chosen in the first, without reloading 
     await routeProjects(other, [first, second]);
     let otherNavigations = 0;
     other.on("framenavigated", frame => { if (frame === other.mainFrame()) otherNavigations += 1; });
-    await other.goto("/agent-board");
+    await other.goto("/");
     await expect(switcherTrigger(other)).toHaveText(first.name);
     const otherNavigationsBefore = otherNavigations;
 
@@ -639,7 +603,7 @@ test("a second tab follows the workspace chosen in the first, without reloading 
     // And it says so: adopting is a workspace switch, so the shell's live
     // region carries the same sentence a click in this tab would produce.
     // Without this, a screen-reader user's board changes under them silently.
-    await expect(liveRegion(other)).toHaveText(`Beralih ke workspace ${second.name}.`);
+    await expect(liveRegion(other)).toHaveText(`Switched to workspace ${second.name}.`);
 
     // And it wrote nothing: adopting is not a selection.
     const writes = await other.evaluate(() => (window as unknown as { __selectionWrites: string[] }).__selectionWrites);

@@ -1,4 +1,5 @@
-import type { AgentTaskState } from "./agent-board-data";
+/** Status of one agent node in the Worktree (not a board task state). */
+export type WorktreeState = "waiting" | "failed" | "running" | "done";
 import type { BMadAgentTreeNode } from "@/lib/bmad";
 
 export type WorktreeAvatar = "claude" | "gemini" | "openai";
@@ -16,7 +17,7 @@ export type WorktreeNode = {
   id: string;
   agent: string;
   model: string;
-  state: AgentTaskState;
+  state: WorktreeState;
   task: string;
   cost?: string;
   tokenUsage?: WorktreeTokenUsage;
@@ -35,7 +36,7 @@ export function formatTokens(num: number): string {
 }
 
 export function bmadNodeToWorktreeNode(node: BMadAgentTreeNode): WorktreeNode {
-  let state: AgentTaskState = "running";
+  let state: WorktreeState = "running";
   if (node.status === "completed") state = "done";
   else if (node.status === "failed") state = "failed";
   else if (node.status === "waiting_approval") state = "waiting";
@@ -71,25 +72,25 @@ export function bmadNodeToWorktreeNode(node: BMadAgentTreeNode): WorktreeNode {
 /** Screenshot-matching local fixture; compact BMad sprint (2 branches) for layout checks. */
 export const bmadWorktreeRun: WorktreeNode = {
   id: "bmad-orchestrator", agent: "BMad Master Orchestrator", model: "claude-opus-5-5",
-  state: "running", task: "Mengkoordinasikan analisis arsitektur dan eksekusi task sprint",
+  state: "running", task: "Coordinating architecture analysis and sprint task execution",
   cost: "21.6k tokens", time: "1m 36s", avatar: "claude", tools: ["github", "notion"],
   children: [
     {
       id: "bmad-analyst", agent: "BMad Analyst", model: "claude-sonnet-5-5",
-      state: "running", task: "Menganalisis file context docs/PRD.md dan mengidentifikasi dependensi domain",
+      state: "running", task: "Analyzing the docs/PRD.md context file and identifying domain dependencies",
       cost: "14.6k tokens", time: "54s", avatar: "claude", tools: ["github"],
     },
     {
       id: "bmad-architect", agent: "BMad Architect", model: "claude-sonnet-5-5",
-      state: "waiting", task: "Menyiapkan rancangan solusi arsitektur dan security gates",
+      state: "waiting", task: "Preparing the architecture solution design and security gates",
       cost: "11.0k tokens", time: "36s", avatar: "claude", tools: ["github", "figma"],
       children: [{
         id: "bmad-developer", agent: "BMad Developer", model: "claude-haiku-5-5",
-        state: "done", task: "Slicing komponen UI dan menyatukan telemetri token usage",
+        state: "done", task: "Slicing UI components and unifying token usage telemetry",
         cost: "7.8k tokens", time: "28s", avatar: "claude", tools: ["github", "stripe"],
         children: [{
           id: "bmad-qa", agent: "BMad QA Engineer", model: "claude-haiku-5-5",
-          state: "running", task: "Menjalankan skenario verifikasi e2e permission gate dan kanban stage",
+          state: "running", task: "Running e2e verification scenarios for the permission gate and kanban stages",
           cost: "5.0k tokens", time: "27s", avatar: "claude", tools: ["github"],
         }],
       }],

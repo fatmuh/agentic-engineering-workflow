@@ -37,9 +37,9 @@ export default function ProvidersPage() {
         <div
           className="flex min-h-[50vh] items-center justify-center text-xs text-muted-foreground"
           role="status"
-          aria-label="Memuat daftar provider"
+          aria-label="Loading the provider list"
         >
-          Memuat daftar provider…
+          Loading the provider list…
         </div>
       }
     >
