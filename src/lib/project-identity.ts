@@ -215,9 +215,9 @@ export function normalizeGitRemote(remote: string): string {
  * RELATIVE PATHS ARE REJECTED. `path.resolve("src")` anchors to the dashboard
  * server's process cwd, and expanding `~` uses the SERVER's home — a CLI
  * sending `src` or `.` would silently key its project to the server's
- * directory, which is never what the caller meant. Only an absolute path or a
- * `~/` path (explicitly the caller's intent to use a home directory) is an
- * identity; `.` and `..` segments are still collapsed lexically, just not
+ * directory, which is never what the caller meant. Only an absolute path (POSIX,
+ * or a Windows drive or UNC path, see {@link windowsPathBase}) or a `~/` path
+ * (explicitly the caller's intent to use a home directory) is an identity; `.` and `..` segments are still collapsed lexically, just not
  * anchored.
  *
  * NON-ASCII IS NOT FOLDED, deliberately. `NORMALIZED_WORKSPACE_SQL` uses
@@ -251,16 +251,39 @@ function asciiLower(value: string): string {
 function workspacePathBase(workspacePath: string): string {
   const value = btrimSpaces(workspacePath);
   if (value === "") return "";
+  if (WINDOWS_ABSOLUTE.test(value)) return windowsPathBase(value);
   let expanded = value;
   if (value === "~" || value.startsWith("~/")) {
     expanded = value === "~" ? homedir() : path.join(homedir(), value.slice(2));
   } else if (!value.startsWith("/")) {
     throw new ProjectIdentityError(
-      "workspacePath must be absolute or start with ~/"
+      "workspacePath must be absolute (/…, C:\\… or \\\\server\\share) or start with ~/"
     );
   }
   // Lexical only: collapses `.`/`..` without touching the filesystem, so no
   // symlink is followed (that is the deliberate no-realpath rule above).
   const absolute = path.resolve(expanded);
   return /^\/+$/.test(absolute) ? "/" : absolute.replace(/\/+$/, "");
+}
+
+/**
+ * A Windows absolute path: a drive (`C:\`, `C:/`) or a UNC share
+ * (`\\server\share`). The CLI on Windows sends these, since that is what the
+ * OS calls an absolute path; `~/` is expanded by the client before sending.
+ */
+const WINDOWS_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/])/;
+
+/**
+ * Windows paths are keyed with forward slashes (`c:/users/x/proj`,
+ * `//server/share/proj`), the same form the Go client sends since it learned
+ * Windows. `.`/`..` collapse lexically within the drive or share, and trailing
+ * slashes go even at a drive root (`C:\` → `C:`) because
+ * `NORMALIZED_WORKSPACE_SQL` strips them unconditionally: a key that SQL would
+ * still change could never be found again. Folding is the caller's job.
+ */
+function windowsPathBase(value: string): string {
+  const slashed = value.replace(/\\/g, "/");
+  const prefix = slashed.startsWith("//") ? "//" : slashed.slice(0, 2);
+  const rest = path.posix.resolve("/", slashed.slice(prefix.length));
+  return (prefix === "//" ? `/${rest}` : `${prefix}${rest}`).replace(/\/+$/, "");
 }

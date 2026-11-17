@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,6 +16,7 @@ import {
 import { useSidebar } from "@/components/ui/sidebar";
 import { UserProfileMenu } from "./user-profile-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { CreateProjectDialog } from "./create-project-dialog";
 import { useActiveProject, workspaceSubtitle } from "./project-context";
 import { WORKSPACE_LIST_FAILED } from "./workspace-switcher-state";
 import { useAnnounce } from "./announcement-context";
@@ -120,6 +122,12 @@ export function AppSidebar({
   // so choosing here is what the board shows.
   const { projects, projectId, project, setProjectId, status: projectStatus, reload } = useActiveProject();
   const announce = useAnnounce();
+  const [createOpen, setCreateOpen] = useState(false);
+  // The mobile drawer closes first: the dialog should not open on top of it.
+  const openCreate = () => {
+    setOpenMobile(false);
+    setCreateOpen(true);
+  };
 
   const workspaces = projects.map(item => ({
     id: item.id,
@@ -173,7 +181,7 @@ export function AppSidebar({
         <div data-workspace-column tabIndex={-1} className="min-h-0 w-full flex-1 overflow-y-auto scrollbar-none focus-visible:outline-none">
           {/* Workspace Brand Row with Close Button */}
           <div className="flex h-8 w-full items-center justify-between px-1">
-            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspaceId} onChange={handleSwitchWorkspace} status={projectStatus} onRetry={reload} />
+            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspaceId} onChange={handleSwitchWorkspace} status={projectStatus} onRetry={reload} onCreate={openCreate} />
 
             <button
               type="button"
@@ -305,7 +313,7 @@ export function AppSidebar({
               isCollapsed ? "justify-center px-0" : "justify-between px-1"
             }`}
           >
-            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspaceId} onChange={handleSwitchWorkspace} collapsed={isCollapsed} status={projectStatus} onRetry={reload} />
+            <WorkspaceSwitcher workspaces={workspaces} value={currentWorkspaceId} onChange={handleSwitchWorkspace} collapsed={isCollapsed} status={projectStatus} onRetry={reload} onCreate={openCreate} />
 
             {/* Collapse Trigger Button on Desktop */}
             {!isCollapsed && (
@@ -458,6 +466,7 @@ export function AppSidebar({
           onOpenCommand={onOpenCommand}
         />
       </aside>
+      <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );
 }

@@ -24,6 +24,8 @@ interface WorkspaceSwitcherProps {
   /** Re-fetch the list after a failure. Rendered as a menu item only when the
    *  list actually failed, so recovery never needs a full page reload. */
   onRetry?: () => void;
+  /** Open the create-workspace dialog. Without it the item stays disabled. */
+  onCreate?: () => void;
   collapsed?: boolean;
 }
 
@@ -33,6 +35,7 @@ export function WorkspaceSwitcher({
   onChange,
   status,
   onRetry,
+  onCreate,
   collapsed = false,
 }: WorkspaceSwitcherProps) {
   const [open, setOpen] = useState(false);
@@ -76,9 +79,7 @@ export function WorkspaceSwitcher({
         )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          {/* Disabled, so it needs no callback: the item is the message, and
-              "Demo" is the visible half of the same sentence as its title. */}
-          <DropdownMenuItem disabled title="Pembuatan workspace belum tersedia di demo ini"><Plus data-icon="inline-start" /><span>Buat workspace</span><span className="workspace-switcher-unavailable">Demo</span></DropdownMenuItem>
+          <DropdownMenuItem disabled={!onCreate} onClick={onCreate}><Plus data-icon="inline-start" /><span>Buat workspace</span></DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -124,7 +125,6 @@ const css = /* css */ `
 .workspace-switcher-menu [data-slot="dropdown-menu-radio-item"]:is(:focus, [data-highlighted]) .workspace-switcher-plan { color: var(--accent-foreground); }
 .workspace-switcher-menu [data-slot="dropdown-menu-separator"] { margin: 4px 0; background: var(--border); }
 .workspace-switcher-menu [data-slot="dropdown-menu-radio-item-indicator"] { inset-inline-end: 8px; inset-inline-start: auto; }
-.workspace-switcher-unavailable { margin-inline-start: auto; font-size: .75rem; color: var(--muted-foreground); }
 @media (hover: hover) {
   .workspace-switcher-menu [data-slot="dropdown-menu-radio-item"]:hover { background: var(--accent); color: var(--accent-foreground); }
   .workspace-switcher-menu [data-slot="dropdown-menu-radio-item"]:hover .workspace-switcher-plan { color: var(--accent-foreground); }

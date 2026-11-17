@@ -123,7 +123,7 @@ function contrast(fg, bg) {
     assert.match(await trigger().getAttribute('aria-label'), new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} — ganti workspace`));
     await trigger().click();
     assert.equal(await page.getByRole('menuitemradio', { name: new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).getAttribute('aria-checked'), 'true');
-    assert.equal(await page.getByRole('menuitem', { name: 'Buat workspace Demo' }).getAttribute('aria-disabled'), 'true');
+    assert.equal(await page.getByRole('menuitem', { name: 'Buat workspace' }).getAttribute('aria-disabled'), null);
     await page.keyboard.press('Escape');
     await menu.waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Collapse sidebar (Cmd+B)' }).click();

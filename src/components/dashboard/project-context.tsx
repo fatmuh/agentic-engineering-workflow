@@ -45,6 +45,9 @@ interface ProjectContextValue {
   status: ProjectStatus;
   setProjectId(id: string): void;
   reload(): void;
+  /** Add a project created in this tab and make it the active one, without a
+   *  round trip: the create response already is the row the list would hold. */
+  addProject(project: WorkspaceProject): void;
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
@@ -64,7 +67,7 @@ function storeProjectId(id: string | null): void {
   writeSelection(localSelectionStorage, id);
 }
 
-function toProject(value: unknown): WorkspaceProject | null {
+export function toProject(value: unknown): WorkspaceProject | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as Record<string, unknown>;
   if (typeof row.id !== "string" || typeof row.name !== "string") return null;
@@ -265,6 +268,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setReloadToken(current => current + 1);
   }, []);
 
+  const addProject = useCallback((created: WorkspaceProject) => {
+    const list = projectsRef.current.some(item => item.id === created.id)
+      ? projectsRef.current
+      : [...projectsRef.current, created];
+    projectsRef.current = list;
+    setProjects(list);
+    setStatus("ready");
+    // The user's own choice, exactly like picking it in the switcher.
+    receivedProjectId.current = null;
+    setProjectIdState(created.id);
+  }, []);
+
   const value = useMemo<ProjectContextValue>(() => ({
     projects,
     projectId,
@@ -272,7 +287,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     status,
     setProjectId,
     reload,
-  }), [projects, projectId, status, setProjectId, reload]);
+    addProject,
+  }), [projects, projectId, status, setProjectId, reload, addProject]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }
