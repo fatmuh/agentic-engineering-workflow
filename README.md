@@ -23,7 +23,8 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Deploying
 
-The schema bootstraps itself on first request. Read `docs/deployment.md` before
+The schema bootstraps itself on first request. Docker and Dokploy setup, and
+what to change when the domain moves, are in `docs/deployment.md`. Read it before
 a deploy that could run two versions at once — the bootstrap lock only works
 between builds that both take it.
 

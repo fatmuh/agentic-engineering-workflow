@@ -1,0 +1,21 @@
+# Build inputs only. Secrets, local builds and agent working files stay out.
+.env*
+!.env.example
+.git
+.github
+.next
+.next-dev
+node_modules
+test-results
+playwright-report
+coverage
+tsconfig.tsbuildinfo
+.claude
+_bmad
+_bmad-output
+transitions
+e2e
+tests
+Dockerfile
+docker-compose.yml
+.dockerignore
