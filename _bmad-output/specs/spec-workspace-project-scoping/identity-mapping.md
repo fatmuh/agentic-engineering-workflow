@@ -48,6 +48,7 @@ Hasil yang disimpan untuk perbandingan: `host/owner/repo` lowercase.
 2. Resolve ke path absolut.
 3. Buang `/` di akhir; pertahankan `/` untuk root.
 4. Jangan resolve symlink — path fisik berbeda yang di-symlink ke direktori yang sama tetap dianggap workspace berbeda; ini disengaja agar worktree tidak saling menimpa.
+5. Path Windows (`C:\...`, `C:/...`, `\\server\share\...`) memakai garis miring maju: `c:/users/x/proj`, `//server/share/proj`. Garis miring di akhir dibuang juga pada root drive (`C:\` → `c:`), karena SQL index membuangnya tanpa kecuali. Path relatif dan path relatif-drive (`C:proj`) tetap ditolak.
 
 Path yang tidak ada di disk pada saat resolusi tetap diterima apa adanya setelah normalisasi. Tidak ada validasi keberadaan direktori di jalur ini.
 
