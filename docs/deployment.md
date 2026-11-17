@@ -49,6 +49,36 @@ returns for the duration of the overlap.
 This is a deployment property, not a code bug: nothing a new build does can
 make an old build take a lock it does not know about.
 
+## Docker and Dokploy
+
+`Dockerfile` builds the Next.js standalone server (non-root, port 3000, with a
+healthcheck). It needs two runtime variables and nothing else:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL 16 connection string |
+| `AUTH_SECRET` | `openssl rand -hex 32`; keep it when moving servers |
+
+On Dokploy: create a PostgreSQL database, then an Application from this repo
+with **Build Type: Dockerfile**, set the two variables (the database's internal
+URL for `DATABASE_URL`), and add a domain on container port 3000 with HTTPS.
+`docker-compose.yml` is the same setup for a plain Docker host.
+
+- **HTTPS is required.** Session cookies are `Secure` in production, so a plain
+  `http://` domain cannot log in. `http://localhost` (e.g. an SSH tunnel) works.
+- **Register your own account first.** The first registered account becomes the
+  Admin, and registration stays open to anyone who can reach the domain.
+- **Changing the domain needs no code change.** The app stores no URL of its
+  own and the MCP OAuth callback goes to the developer's `127.0.0.1`. Add the
+  new domain, then on each developer machine run
+  `bmad-monitor --server https://<new-domain>` and `bmad-monitor login`. Web
+  users log in again because cookies belong to a domain.
+- **Moving to another server:** `pg_dump` and restore the database and reuse the
+  same `AUTH_SECRET`. A new secret signs out everyone and leaves stored provider
+  API keys unreadable (see *Secrets at rest*). Starting from an empty database
+  instead invalidates the project IDs in each developer's
+  `~/.bmad-monitor/config.json` (`workspaceProjects`).
+
 ## Verifying a deploy
 
 ```bash

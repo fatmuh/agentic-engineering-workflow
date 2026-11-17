@@ -1,0 +1,39 @@
+# Dashboard + PostgreSQL on one host.
+#
+#   cp .env.example .env    # set AUTH_SECRET and POSTGRES_PASSWORD
+#   docker compose up -d --build
+#
+# The app listens on 127.0.0.1:3000 only (APP_PORT in .env changes the port).
+# Put an HTTPS reverse proxy in front of it (session cookies are Secure in
+# production), or reach it through an SSH tunnel to localhost. The first
+# account registered becomes the Admin.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentic-workflow
+      POSTGRES_USER: awm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U awm -d agentic-workflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://awm:${POSTGRES_PASSWORD}@db:5432/agentic-workflow
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+
+volumes:
+  db-data:
