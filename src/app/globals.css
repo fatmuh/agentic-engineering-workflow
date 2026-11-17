@@ -539,11 +539,17 @@ nextjs-portal,
 
 /* Worktree keeps the reference geometry and shares the Accordion motion
    tokens with Board. Each t-acc controls only its direct panel. */
+/* The canvas is a fixed frame; the stage inside it keeps its natural size and
+   is panned/zoomed by transform, so a wide tree overflows instead of shrinking. */
 .worktree-canvas {
   container-type: inline-size;
+  position: relative;
   width: 100%;
   min-width: 0;
-  padding: 16px 20px 24px;
+  height: clamp(360px, 70vh, 760px);
+  overflow: clip;
+  cursor: grab;
+  touch-action: none;
   border-radius: 12px;
   background: #fafafa;
   --worktree-line: #83b9ff;
@@ -558,10 +564,51 @@ nextjs-portal,
   --worktree-muted: #b1b1b1;
   --worktree-subtle: #b1b1b1;
 }
-.worktree-tree {
-  width: min(calc(var(--worktree-column-count, 3) * 288px - 40px), 100%);
-  margin-inline: auto;
-  list-style: none;
+.worktree-canvas { user-select: none; }
+.worktree-canvas[data-panning="true"] { cursor: grabbing; }
+.worktree-stage {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  width: calc(var(--worktree-column-count, 3) * 288px - 40px);
+  transform-origin: 50% 0;
+}
+.worktree-tree { width: 100%; list-style: none; }
+.worktree-controls {
+  position: absolute;
+  z-index: 3;
+  inset-block-end: 12px;
+  inset-inline-end: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--worktree-card);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 8%), 0 1px 2px rgb(0 0 0 / 8%);
+  cursor: default;
+}
+.dark .worktree-controls { box-shadow: 0 0 0 1px rgb(255 255 255 / 10%), 0 1px 2px rgb(0 0 0 / 30%); }
+.worktree-controls button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--worktree-subtle);
+  cursor: pointer;
+}
+.worktree-controls button:disabled { opacity: 0.4; cursor: default; }
+.worktree-controls button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+@media (hover: hover) {
+  .worktree-controls button:enabled:hover { color: var(--foreground); background: var(--muted); }
+}
+.worktree-zoom-level {
+  min-width: 40px;
+  text-align: center;
+  color: var(--worktree-subtle);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
 }
 .worktree-node { position: relative; min-width: 0; list-style: none; outline: none; }
 .worktree-node:focus-visible > .worktree-card {
@@ -719,6 +766,18 @@ nextjs-portal,
   border-inline-end: 1.5px solid var(--worktree-line);
   border-start-end-radius: 8px;
 }
+/* Middle columns need their own drop from the shared bar to the card; only the
+   first and last get one from their corner piece above. Wide layout only. */
+@container (min-width: 700px) {
+  .worktree-columns > .worktree-node:not(:first-child):not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: -20px;
+    inset-inline-start: 50%;
+    height: 20px;
+    border-inline-start: 1.5px solid var(--worktree-line);
+  }
+}
 .worktree-branches { padding-top: 12px; padding-inline-start: 32px; list-style: none; }
 .worktree-branches > .worktree-node + .worktree-node { margin-top: 12px; }
 .worktree-branches > .worktree-node::before {
@@ -742,7 +801,7 @@ nextjs-portal,
   border-end-start-radius: 7px;
 }
 @container (max-width: 699px) {
-  .worktree-tree { width: min(400px, 100%); }
+  .worktree-stage { width: min(400px, calc(100% - 40px)); }
   .worktree-root > .worktree-card { margin-inline: 0; }
   .worktree-root > .worktree-card > .worktree-port { inset-inline-start: 17px; }
   .worktree-root > .worktree-children::before { display: none; }

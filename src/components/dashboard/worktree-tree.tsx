@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { ChatGptIcon, ClaudeIcon, FigmaIcon, GithubIcon, GoogleGeminiIcon, NotionIcon, SlackIcon, StripeIcon } from "@hugeicons/core-free-icons";
 import { parseDurationToSeconds, formatSecondsToDuration } from "./agent-board-data";
 import { formatTokens, type WorktreeAvatar, type WorktreeNode, type WorktreeState, type WorktreeTool } from "./worktree-tree-data";
-import { AlertCircle, Check, ChevronDown, Clock } from "@/components/icons";
+import { AlertCircle, Check, ChevronDown, Clock, Minus, Plus, RotateCcw } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 const avatarIcons: Record<WorktreeAvatar, IconSvgElement> = {
@@ -194,6 +194,136 @@ function TreeNode({ node, parentId, depth, openIds, focusedId, onToggle, onFocus
   );
 }
 
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 2;
+/** Gap between the canvas top and the stage (matches .worktree-stage); zoom maths measure from it. */
+const STAGE_TOP = 24;
+const FOCUS_MARGIN = 24;
+
+interface ViewState { x: number; y: number; scale: number }
+const HOME: ViewState = { x: 0, y: 0, scale: 1 };
+
+/**
+ * A pan/zoom canvas: the tree keeps its natural size and may overflow the
+ * frame. Drag to pan; Ctrl/Cmd + scroll (or pinch) or the buttons to zoom.
+ * Plain scroll is left alone so the page still scrolls past it.
+ */
+function WorktreeViewport({ style, children }: { style: CSSProperties; children: ReactNode }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [view, setView] = useState<ViewState>(HOME);
+  const [panning, setPanning] = useState(false);
+  const drag = useRef<{ id: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
+  // (qx, qy) is the zoom anchor, measured from the stage's top-centre at scale 1.
+  const zoomAt = useCallback((factor: number, qx: number, qy: number) => {
+    setView(current => {
+      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, current.scale * factor));
+      const k = scale / current.scale;
+      return { scale, x: qx - (qx - current.x) * k, y: qy - (qy - current.y) * k };
+    });
+  }, []);
+
+  const zoomFromCenter = (factor: number) => {
+    const el = viewportRef.current;
+    zoomAt(factor, 0, el ? el.clientHeight / 2 - STAGE_TOP : 0);
+  };
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    // Not React's onWheel: that listener is passive and cannot stop the page zooming.
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const delta = Math.max(-100, Math.min(100, event.deltaY));
+      zoomAt(Math.exp(-delta * 0.0025), event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - STAGE_TOP);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("[data-worktree-controls]")) return;
+    drag.current = { id: event.pointerId, startX: event.clientX, startY: event.clientY, originX: view.x, originY: view.y, moved: false };
+  };
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== event.pointerId) return;
+    const dx = event.clientX - d.startX;
+    const dy = event.clientY - d.startY;
+    if (!d.moved) {
+      if (Math.hypot(dx, dy) < 4) return; // still a click
+      d.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setPanning(true);
+    }
+    setView(current => ({ ...current, x: d.originX + dx, y: d.originY + dy }));
+  };
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== event.pointerId) return;
+    drag.current = null;
+    if (d.moved) {
+      // The release would otherwise count as a click and fold a card.
+      suppressClick.current = true;
+      setTimeout(() => { suppressClick.current = false; }, 0);
+      setPanning(false);
+    }
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomFromCenter(1.2); }
+    else if (event.key === "-") { event.preventDefault(); zoomFromCenter(1 / 1.2); }
+    else if (event.key === "0") { event.preventDefault(); setView(HOME); }
+  };
+
+  // Keyboard focus can land on a card that is panned out of sight; bring it back.
+  const onFocusCapture = (event: FocusEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const el = viewportRef.current;
+    if (!el || !target.matches("[data-tree-node]")) return;
+    const card = target.querySelector<HTMLElement>(":scope > [data-worktree-card]") ?? target;
+    const frame = el.getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    const shift = (min: number, max: number, lo: number, hi: number) =>
+      min < lo + FOCUS_MARGIN ? lo + FOCUS_MARGIN - min : max > hi - FOCUS_MARGIN ? hi - FOCUS_MARGIN - max : 0;
+    const dx = shift(box.left, box.right, frame.left, frame.right);
+    const dy = shift(box.top, box.bottom, frame.top, frame.bottom);
+    if (dx || dy) setView(current => ({ ...current, x: current.x + dx, y: current.y + dy }));
+  };
+
+  return (
+    <div
+      ref={viewportRef}
+      className="worktree-canvas"
+      data-panning={panning ? "true" : undefined}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onClickCapture={event => { if (suppressClick.current) { event.stopPropagation(); event.preventDefault(); } }}
+      onKeyDown={onKeyDown}
+      onFocusCapture={onFocusCapture}
+    >
+      <div
+        className="worktree-stage"
+        style={{ ...style, transform: `translate(-50%, 0) translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+      >
+        {children}
+      </div>
+      <div data-worktree-controls role="group" aria-label="Zoom" className="worktree-controls">
+        <button type="button" aria-label="Zoom out" title="Zoom out (-)" disabled={view.scale <= MIN_SCALE} onClick={() => zoomFromCenter(1 / 1.2)}><Minus className="size-3.5" /></button>
+        <span aria-live="polite" className="worktree-zoom-level" title="Ctrl + scroll to zoom, drag to pan">{Math.round(view.scale * 100)}%</span>
+        <button type="button" aria-label="Zoom in" title="Zoom in (+)" disabled={view.scale >= MAX_SCALE} onClick={() => zoomFromCenter(1.2)}><Plus className="size-3.5" /></button>
+        <button type="button" aria-label="Reset view" title="Reset view (0)" onClick={() => setView(HOME)}><RotateCcw className="size-3.5" /></button>
+      </div>
+    </div>
+  );
+}
+
 export function WorktreeTree({ run }: { run: WorktreeNode }) {
   const [openIds, setOpenIds] = useState<string[]>(() => collectParentIds(run));
   const [focusedId, setFocusedId] = useState(run.id);
@@ -232,10 +362,10 @@ export function WorktreeTree({ run }: { run: WorktreeNode }) {
   };
 
   return (
-    <div className="worktree-canvas">
-      <ul ref={treeRef} role="tree" aria-label="Agent run" onKeyDown={onKeyDown} className="worktree-tree" style={{ "--worktree-column-count": Math.max(1, run.children?.length ?? 0) } as CSSProperties}>
+    <WorktreeViewport style={{ "--worktree-column-count": Math.max(1, run.children?.length ?? 0) } as CSSProperties}>
+      <ul ref={treeRef} role="tree" aria-label="Agent run" onKeyDown={onKeyDown} className="worktree-tree">
         <TreeNode node={run} parentId={null} depth={0} openIds={openIds} focusedId={focusedId} onToggle={toggle} onFocusNode={setFocusedId} />
       </ul>
-    </div>
+    </WorktreeViewport>
   );
 }
