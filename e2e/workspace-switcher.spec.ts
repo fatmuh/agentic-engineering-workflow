@@ -246,8 +246,38 @@ test("an empty project list says so instead of showing an empty trigger", async 
   );
   await switcherTrigger(page).click();
   await expect(switcherMenu(page)).toContainText(MENU_EMPTY);
-  // "Buat workspace" stays present and disabled — the only affordance left.
-  await expect(page.getByRole("menuitem", { name: /Buat workspace/ })).toBeDisabled();
+  // "Buat workspace" is the way out of an empty list, so it must be usable.
+  await expect(page.getByRole("menuitem", { name: /Buat workspace/ })).toBeEnabled();
+});
+
+test("creating a workspace from the switcher selects it and hands over its project id", async ({ page }, testInfo) => {
+  const fixture = projectFixture(testInfo.retry, "create", 1);
+  await login(page, ADMIN_EMAIL);
+  await page.goto("/");
+
+  await switcherTrigger(page).click();
+  await page.getByRole("menuitem", { name: /Buat workspace/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Buat workspace" });
+  await dialog.getByLabel("Nama").fill(fixture.name);
+  // A Windows path, as typed on that machine: the API used to reject it.
+  const stamp = fixture.id.slice("prj_e2e_switcher_create_".length);
+  await dialog.getByLabel("Path folder (opsional)").fill(`C:\\Users\\E2E\\${stamp}\\`);
+  await dialog.getByRole("button", { name: "Buat workspace" }).click();
+
+  const done = page.getByRole("dialog", { name: "Workspace dibuat" });
+  await expect(done).toBeVisible();
+  const id = (await done.locator("code").innerText()).trim();
+  expect(id).toMatch(/^prj_[0-9a-f]{16}$/);
+  seededProjects.push({ id, name: fixture.name, path: "" });
+
+  const { rows } = await getPool().query<{ name: string; workspace_path: string }>(
+    "SELECT name, workspace_path FROM bmad_projects WHERE id = $1",
+    [id],
+  );
+  expect(rows).toEqual([{ name: fixture.name, workspace_path: `c:/users/e2e/${stamp.toLowerCase()}` }]);
+
+  await done.getByRole("button", { name: "Selesai" }).click();
+  await expect(switcherTrigger(page)).toHaveText(fixture.name);
 });
 
 test("switching workspace toasts in Indonesian and announces the new name to the shell's live region", async ({ page }, testInfo) => {
