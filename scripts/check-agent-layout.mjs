@@ -82,6 +82,9 @@ async function checkGeometry(page, selector) {
     const boardTab = page.getByRole("tab", { name: "Board", exact: true });
     const treeTab = page.getByRole("tab", { name: "Worktree", exact: true });
     await boardTab.waitFor();
+    // The Worktree shows recorded sessions only (no sample tree any more), so
+    // pin the demo project, whose seed carries an agent tree to lay out.
+    await page.evaluate(id => localStorage.setItem("bmad-monitor.active-project-id", id), "prj_default");
     mkdirSync(output, { recursive: true });
     for (const theme of ["light", "dark"]) {
       await page.evaluate(theme => { localStorage.setItem("theme", theme); }, theme);
@@ -93,7 +96,7 @@ async function checkGeometry(page, selector) {
         // including an unbroken identifier that must not force a grid's min-content width.
         await page.locator('[data-agent-task] > button').evaluateAll(buttons => {
           for (const button of buttons) {
-            button.children[0].lastElementChild.textContent = "Implementasi Autentikasi OAuth 2.0 PKCE & Whitelist " + "LongIdentifier".repeat(6);
+            button.children[0].textContent = "Implement OAuth 2.0 PKCE Authentication & Whitelist " + "LongIdentifier".repeat(6);
             button.children[1].textContent = "Membuat handler otorisasi loopback dan endpoint validasi user untuk CLI BMad Monitor. ".repeat(2);
           }
         });
@@ -101,49 +104,33 @@ async function checkGeometry(page, selector) {
         await checkGeometry(page, "[data-agent-task]");
         if (width === 1600 || width === 320) await page.screenshot({ path: path.join(output, `board-${theme}-${width}.png`) });
         await treeTab.click();
-        for (const scenario of ["bmad", "pricing"]) {
-          // Story 6 renamed this control ("Sumber pohon Worktree") and both
-          // options, so the old English labels no longer match anything.
-          await page.getByRole("button", { name: "Sumber pohon Worktree", exact: true }).click();
-          const scenarioOption = page.getByRole("radio", { name: scenario === "bmad" ? "Pohon BMad langsung · database" : "Contoh · Halaman harga · 3 cabang", exact: true });
-          await scenarioOption.click();
-          assert.equal(await scenarioOption.getAttribute("aria-checked"), "true");
-          assert.equal(await page.getByRole("radio", { checked: true }).count(), 1);
-          await page.keyboard.press("Escape");
-          await settle(page);
-          // The sample source renders its tree plus a visible sample-data note;
-          // a live source with no tree for the active workspace draws no cards
-          // at all (it states the empty tree), so only check geometry when a
-          // tree actually rendered. Either way the panel must not overflow.
-          const rendered = await page.locator("[data-worktree-card]").count() > 0;
-          if (rendered) {
-            await checkGeometry(page, "[data-worktree-card]");
-          } else {
-            await checkGeometry(page, "#agent-worktree-panel");
-          }
-          if (rendered && await page.locator('.worktree-canvas').evaluate(canvas => canvas.clientWidth - 40 >= 700)) {
-            const widths = await page.locator('[data-worktree-card]').evaluateAll(cards => cards.map(card => card.getBoundingClientRect().width));
-            assert.ok(widths.every(value => value <= 249), `${scenario}: cards must stay compact, got ${widths}`);
-            const junction = await page.locator('.worktree-root > .worktree-children').evaluate(panel => {
-              const stem = getComputedStyle(panel, '::before');
-              const child = panel.querySelector('.worktree-columns > .worktree-node');
-              const branch = getComputedStyle(child, '::before');
-              return {
-                stemBottom: panel.getBoundingClientRect().top + parseFloat(stem.top) + parseFloat(stem.height),
-                branchTop: child.getBoundingClientRect().top + parseFloat(branch.top),
-              };
-            });
-            assert.ok(Math.abs(junction.stemBottom - junction.branchTop) < 1, `${scenario}: root connector must stop at branch junction: ${JSON.stringify(junction)}`);
-          }
-          if (width === 1600 || width === 320) await page.screenshot({ path: path.join(output, `${scenario}-${theme}-${width}.png`) });
+        await settle(page);
+        // The sample source renders its tree plus a visible sample-data note;
+        // a live source with no tree for the active workspace draws no cards
+        // at all (it states the empty tree), so only check geometry when a
+        // tree actually rendered. Either way the panel must not overflow.
+        const rendered = await page.locator("[data-worktree-card]").count() > 0;
+        if (rendered) {
+          await checkGeometry(page, "[data-worktree-card]");
+        } else {
+          await checkGeometry(page, "#agent-worktree-panel");
         }
-        // Leave the tab on the sample source for the remaining card checks.
-        if (await page.locator('[data-worktree-card="run-orchestrator"]').count() === 0) {
-          await page.getByRole("button", { name: "Sumber pohon Worktree", exact: true }).click();
-          await page.getByRole("radio", { name: "Contoh · Halaman harga · 3 cabang", exact: true }).click();
-          await page.keyboard.press("Escape");
+        if (rendered && await page.locator('.worktree-canvas').evaluate(canvas => canvas.clientWidth - 40 >= 700)) {
+          const widths = await page.locator('[data-worktree-card]').evaluateAll(cards => cards.map(card => card.getBoundingClientRect().width));
+          assert.ok(widths.every(value => value <= 249), `cards must stay compact, got ${widths}`);
+          const junction = await page.locator('.worktree-root > .worktree-children').evaluate(panel => {
+            const stem = getComputedStyle(panel, '::before');
+            const child = panel.querySelector('.worktree-columns > .worktree-node');
+            const branch = getComputedStyle(child, '::before');
+            return {
+              stemBottom: panel.getBoundingClientRect().top + parseFloat(stem.top) + parseFloat(stem.height),
+              branchTop: child.getBoundingClientRect().top + parseFloat(branch.top),
+            };
+          });
+          assert.ok(Math.abs(junction.stemBottom - junction.branchTop) < 1, `root connector must stop at branch junction: ${JSON.stringify(junction)}`);
         }
-        await page.locator('[data-worktree-card="run-orchestrator"]').waitFor();
+        if (width === 1600 || width === 320) await page.screenshot({ path: path.join(output, `worktree-${theme}-${width}.png`) });
+        await page.locator('[data-worktree-card="node-root-orchestrator"]').waitFor();
         await page.locator('.worktree-name').evaluateAll(names => names.forEach(name => { name.textContent = "BMad Master Orchestrator " + "LongAgentIdentifier".repeat(3); }));
         await settle(page);
         await checkGeometry(page, "[data-worktree-card]");
@@ -203,43 +190,27 @@ async function checkGeometry(page, selector) {
     assert.notEqual(await page.locator('.worktree-root > .worktree-card').evaluate(card => getComputedStyle(card).outlineStyle), "none");
     await page.keyboard.press("Enter"); await settle(page);
     assert.equal(await root.getAttribute("aria-expanded"), "false");
-    assert.equal(await page.locator('#worktree-fold-run-orchestrator > div').getAttribute("inert"), "");
+    assert.equal(await page.locator('#worktree-fold-node-root-orchestrator > div').getAttribute("inert"), "");
     await page.keyboard.press("ArrowRight"); await settle(page);
     await page.keyboard.press("ArrowDown");
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.treeNode), "run-researcher");
+    const firstChild = await page.getByRole("treeitem", { level: 2 }).first().getAttribute("data-tree-node");
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.treeNode), firstChild);
     await page.emulateMedia({ reducedMotion: "reduce" });
     assert.equal(await page.locator('.worktree-children').first().evaluate(el => getComputedStyle(el).transitionDuration), "0s");
     passed.push("Keyboard expand/collapse, arrow navigation, focus outline, inert descendants and reduced motion");
     passed.push("Worktree rendered status, model, task and disclosure text contrast >= 4.5:1 in both themes");
     await boardTab.click();
-    // The approve/retry flow needs the demo seed's cards (TASK-101 pending,
-    // TASK-102 running). A scratch server seeds prj_default too, but an
-    // arbitrarily named workspace does not — pin the demo project for this
-    // half so the check exercises what it was written for.
+    // The board has no approval step any more (SIMS agents never wait for a
+    // reviewer): the demo seed's cards land in To do / Running / Done by stage.
     await page.evaluate(id => localStorage.setItem("bmad-monitor.active-project-id", id), "prj_default");
     await page.reload();
     await boardTab.waitFor();
-    // Approve lives inside the pending card, so open that card first. A repeat
-    // run against the same database has nothing left to approve; the lane must
-    // then already be empty, which is the same end state this asserts.
-    const pending = page.locator('[data-agent-column="needs-you"] [data-agent-task]');
-    // The board loads asynchronously (and re-polls every 5 s), so wait for the
-    // demo card to be on screen before deciding there is nothing to approve.
-    const emptyLane = page.locator('[data-agent-column="needs-you"]').getByText("No tasks here", { exact: true });
-    await pending.or(emptyLane).first().waitFor({ timeout: 20_000 });
-    if (await pending.count() > 0) {
-      await pending.first().locator('> button').click();
-      await page.getByRole("button", { name: "Approve", exact: true }).click();
+    for (const lane of ["todo", "running", "done"]) {
+      await page.locator(`[data-agent-column="${lane}"]`).waitFor({ timeout: 20_000 });
     }
-    // Approving moves the card out of the lane. The refetch that renders the
-    // empty state is asynchronous, so wait for it instead of sampling.
-    await emptyLane.waitFor({ timeout: 20_000 });
-    assert.equal(await pending.count(), 0);
-    // The approved card landed in Running; the demo seed's completed card
-    // stays in Done.
-    await page.locator('[data-agent-column="running"] [data-agent-task]').first().waitFor({ timeout: 20_000 });
+    await page.locator("[data-agent-task]").first().waitFor({ timeout: 20_000 });
     await checkGeometry(page, "[data-agent-task]");
-    passed.push("Approve/Retry move cards, empty lane remains usable");
+    passed.push("To do / Running / Done lanes render the demo cards");
     assert.deepEqual(pageErrors, []);
     console.log(JSON.stringify({ passed, pageErrors, screenshots: output }, null, 2));
   } finally {

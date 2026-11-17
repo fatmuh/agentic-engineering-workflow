@@ -6,14 +6,14 @@ import type { ProjectStatus } from "./project-selection";
  * the board's recovery copy drifted away from the switcher's; every surface
  * that reports the failure now reads it from here.
  */
-export const WORKSPACE_LIST_FAILED = "Daftar workspace gagal dimuat.";
+export const WORKSPACE_LIST_FAILED = "Couldn't load the workspace list.";
 
 /** The same failure when rows from the last successful load are still on
  *  screen, so the list is stale rather than absent. Reached by the switcher
  *  menu, whose rows survive a failed refresh; the board and sidebar notices
  *  cannot reach that state (nothing reloads the list while rows are loaded),
  *  so they always use `WORKSPACE_LIST_FAILED`. */
-export const WORKSPACE_LIST_STALE = "Daftar workspace gagal dimuat. Daftar workspace mungkin sudah tidak terbaru.";
+export const WORKSPACE_LIST_STALE = "Couldn't load the workspace list. The list shown may be out of date.";
 
 /** What the Workspace Switcher's trigger and menu say for a given state.
  *  `trigger` is the visible trigger text, `label` the trigger's accessible
@@ -54,10 +54,10 @@ export function switcherCopy(
 ): SwitcherCopy {
   if (workspaceCount > 0) {
     if (status === "error") {
-      const trigger = activeName || "Pilih workspace";
+      const trigger = activeName || "Choose a workspace";
       return {
         trigger,
-        label: label(trigger, "ganti workspace; daftar workspace gagal dimuat"),
+        label: label(trigger, "switch workspace; couldn't load the workspace list"),
         note: WORKSPACE_LIST_STALE,
         staleFailure: true,
       };
@@ -65,38 +65,38 @@ export function switcherCopy(
     if (activeName) {
       return {
         trigger: activeName,
-        label: label(activeName, "ganti workspace"),
+        label: label(activeName, "switch workspace"),
         note: null,
       };
     }
     // Rows exist, but none of them is the active one.
     return {
-      trigger: "Pilih workspace",
-      label: label("Pilih workspace", "ganti workspace; belum ada workspace aktif"),
-      note: "Belum ada workspace aktif. Pilih salah satu workspace di bawah.",
+      trigger: "Choose a workspace",
+      label: label("Choose a workspace", "switch workspace; no active workspace"),
+      note: "No active workspace. Choose one below.",
     };
   }
 
   if (status === "loading") {
-    const trigger = "Memuat workspace…";
+    const trigger = "Loading workspaces…";
     return {
       trigger,
-      label: label(trigger, "ganti workspace; daftar workspace sedang dimuat"),
-      note: "Memuat daftar workspace…",
+      label: label(trigger, "switch workspace; loading the workspace list"),
+      note: "Loading the workspace list…",
     };
   }
   if (status === "error") {
-    const trigger = "Gagal memuat workspace";
+    const trigger = "Couldn't load workspaces";
     return {
       trigger,
-      label: label(trigger, "ganti workspace; daftar workspace gagal dimuat"),
+      label: label(trigger, "switch workspace; couldn't load the workspace list"),
       note: WORKSPACE_LIST_FAILED,
     };
   }
-  const trigger = "Belum ada workspace";
+  const trigger = "No workspaces";
   return {
     trigger,
-    label: label(trigger, "ganti workspace; belum ada workspace terdaftar"),
-    note: "Belum ada workspace terdaftar.",
+    label: label(trigger, "switch workspace; no workspaces yet"),
+    note: "No workspaces yet.",
   };
 }

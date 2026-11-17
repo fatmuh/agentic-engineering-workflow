@@ -15,14 +15,14 @@ import {
 describe("switcherCopy", () => {
   it("loading says it is loading instead of leaving the trigger blank", () => {
     const copy = switcherCopy("loading", 0, "");
-    expect(copy.trigger).toBe("Memuat workspace…");
-    expect(copy.note).toBe("Memuat daftar workspace…");
+    expect(copy.trigger).toBe("Loading workspaces…");
+    expect(copy.note).toBe("Loading the workspace list…");
     expect(copy.staleFailure).toBeUndefined();
   });
 
   it("an empty list on error reports the failure", () => {
     const copy = switcherCopy("error", 0, "");
-    expect(copy.trigger).toBe("Gagal memuat workspace");
+    expect(copy.trigger).toBe("Couldn't load workspaces");
     // One sentence, shared with the board's recovery notice.
     expect(copy.note).toBe(WORKSPACE_LIST_FAILED);
     expect(copy.staleFailure).toBeUndefined();
@@ -30,15 +30,15 @@ describe("switcherCopy", () => {
 
   it("a ready list with no workspaces says so", () => {
     const copy = switcherCopy("ready", 0, "");
-    expect(copy.trigger).toBe("Belum ada workspace");
-    expect(copy.note).toBe("Belum ada workspace terdaftar.");
+    expect(copy.trigger).toBe("No workspaces");
+    expect(copy.note).toBe("No workspaces yet.");
   });
 
   it("a ready list with an active workspace is just the name and the radio list", () => {
     const copy = switcherCopy("ready", 3, "Acme Production");
     expect(copy).toEqual({
       trigger: "Acme Production",
-      label: "Acme Production — ganti workspace",
+      label: "Acme Production — switch workspace",
       note: null,
     });
   });
@@ -48,8 +48,8 @@ describe("switcherCopy", () => {
     // the defect. The failure moves to the menu note instead.
     const copy = switcherCopy("error", 3, "Acme Production");
     expect(copy.trigger).toBe("Acme Production");
-    expect(copy.label).toBe("Acme Production — ganti workspace; daftar workspace gagal dimuat");
-    expect(copy.note).toContain("gagal dimuat");
+    expect(copy.label).toBe("Acme Production — switch workspace; couldn't load the workspace list");
+    expect(copy.note).toContain("Couldn't load");
     expect(copy.staleFailure).toBe(true);
   });
 
@@ -57,14 +57,14 @@ describe("switcherCopy", () => {
     // Never a blank chip: the trigger names the action, and the menu says why
     // no row is marked.
     const copy = switcherCopy("ready", 2, "");
-    expect(copy.trigger).toBe("Pilih workspace");
-    expect(copy.label).toBe("Pilih workspace — ganti workspace; belum ada workspace aktif");
-    expect(copy.note).toContain("Belum ada workspace aktif");
+    expect(copy.trigger).toBe("Choose a workspace");
+    expect(copy.label).toBe("Choose a workspace — switch workspace; no active workspace");
+    expect(copy.note).toContain("No active workspace");
   });
 
   it("the failed-but-populated list with no active row still avoids a blank trigger", () => {
     const copy = switcherCopy("error", 2, "");
-    expect(copy.trigger).toBe("Pilih workspace");
+    expect(copy.trigger).toBe("Choose a workspace");
     expect(copy.staleFailure).toBe(true);
   });
 

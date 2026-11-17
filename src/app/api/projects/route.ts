@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { ensureSchema, pool, query } from "@/lib/db";
 import { guardBmadApi } from "@/lib/oauth";
 import {
   ProjectIdentityError,
-  newProjectId,
+  insertProject,
   normalizeProjectIdentity,
+  type ProjectRow,
   toProjectConflict,
   toProjectResponse,
 } from "@/lib/projects";
@@ -15,15 +16,7 @@ export async function GET(req: Request) {
   try {
     // Read-only on purpose: the demo seed is a startup concern
     // (`src/instrumentation.ts`), not a side effect of listing projects.
-    const res = await query<{
-      id: string;
-      name: string;
-      git_remote_url: string | null;
-      workspace_path: string | null;
-      owner_id: string | null;
-      team_id: string | null;
-      created_at: Date;
-    }>(`SELECT * FROM bmad_projects ORDER BY created_at DESC`);
+    const res = await query<ProjectRow>(`SELECT * FROM bmad_projects ORDER BY created_at DESC`);
 
     // The shared mapper, so the userinfo filter (D-5) and every other field
     // shape live in one place rather than once per endpoint.
@@ -70,22 +63,14 @@ export async function POST(req: Request) {
       workspacePath: typeof workspacePath === "string" ? workspacePath : null,
     });
 
-    const res = await query<{
-      id: string;
-      name: string;
-      git_remote_url: string | null;
-      workspace_path: string | null;
-      owner_id: string | null;
-      team_id: string | null;
-      created_at: Date;
-    }>(
-      `INSERT INTO bmad_projects (id, name, git_remote_url, workspace_path)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [newProjectId(), name, identity.gitRemoteUrl, identity.workspacePath]
-    );
+    await ensureSchema();
+    const row = await insertProject(pool, {
+      name,
+      gitRemoteUrl: identity.gitRemoteUrl,
+      workspacePath: identity.workspacePath,
+    });
 
-    return NextResponse.json(toProjectResponse(res.rows[0]), { status: 201 });
+    return NextResponse.json(toProjectResponse(row), { status: 201 });
   } catch (err: unknown) {
     // An identity the normaliser refuses (non-ASCII remote, relative path) is
     // the caller's mistake, same as on the resolve path.

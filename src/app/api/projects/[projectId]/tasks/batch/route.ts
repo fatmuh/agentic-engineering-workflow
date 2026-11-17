@@ -30,7 +30,8 @@ export async function POST(
       const assignedAgent = t.assignedAgent || "bmad-agent";
       const contextFiles = t.contextFiles || [];
       const checklists = t.checklists || [];
-      const steps = t.steps || [{ text: "Task created by BMad agent", time: "now" }];
+      // No placeholder step: the board shows creation from `created_at`.
+      const steps = t.steps || [];
       const duration = t.duration || "0s";
 
       const res = await query<{

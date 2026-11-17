@@ -75,18 +75,18 @@ export function parseAuthorizeParams(raw: {
     errorDescription,
   });
 
-  if (raw.response_type !== "code") return fail("invalid_request", "response_type harus 'code'");
+  if (raw.response_type !== "code") return fail("invalid_request", "response_type must be 'code'");
   if (raw.client_id !== MCP_CLIENT_ID)
-    return fail("invalid_client", `client_id harus '${MCP_CLIENT_ID}'`);
+    return fail("invalid_client", `client_id must be '${MCP_CLIENT_ID}'`);
 
   const redirectUri = raw.redirect_uri ?? "";
   if (!isSafeRedirectUri(redirectUri))
-    return fail("invalid_request", "redirect_uri harus loopback http://127.0.0.1:<port>/callback");
+    return fail("invalid_request", "redirect_uri must be a loopback http://127.0.0.1:<port>/callback");
 
   if (!raw.state) return fail("invalid_request", "state wajib diisi");
   if (!raw.code_challenge) return fail("invalid_request", "code_challenge wajib diisi");
   if (raw.code_challenge_method !== "S256")
-    return fail("invalid_request", "code_challenge_method harus 'S256'");
+    return fail("invalid_request", "code_challenge_method must be 'S256'");
 
   return {
     ok: true,
@@ -223,15 +223,15 @@ export async function exchangeAuthCode(input: {
   );
 
   if (claimed.rowCount !== 1) {
-    return { status: "invalid_grant", errorDescription: "code tidak dikenal, kedaluwarsa, atau sudah dipakai" };
+    return { status: "invalid_grant", errorDescription: "code is unknown, expired, or already used" };
   }
   const row = claimed.rows[0];
 
   if (input.redirectUri !== row.redirect_uri) {
-    return { status: "invalid_grant", errorDescription: "redirect_uri tidak cocok" };
+    return { status: "invalid_grant", errorDescription: "redirect_uri does not match" };
   }
   if (sha256Base64Url(input.codeVerifier) !== row.code_challenge) {
-    return { status: "invalid_grant", errorDescription: "PKCE S256 tidak cocok" };
+    return { status: "invalid_grant", errorDescription: "PKCE S256 does not match" };
   }
 
   const user = await loadUserById(row.user_id);

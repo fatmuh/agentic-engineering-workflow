@@ -16,7 +16,7 @@ function oauthError(status: number, error: string, errorDescription: string): Ne
 export async function POST(req: Request) {
   const form = await req.formData().catch(() => null);
   if (!form) {
-    return oauthError(400, "invalid_request", "body harus application/x-www-form-urlencoded");
+    return oauthError(400, "invalid_request", "body must be application/x-www-form-urlencoded");
   }
   const field = (name: string): string => {
     const value = form.get(name);
@@ -27,10 +27,10 @@ export async function POST(req: Request) {
   const clientId = field("client_id");
 
   if (clientId !== MCP_CLIENT_ID) {
-    return oauthError(400, "invalid_client", `client_id harus '${MCP_CLIENT_ID}'`);
+    return oauthError(400, "invalid_client", `client_id must be '${MCP_CLIENT_ID}'`);
   }
   if (grantType !== "authorization_code" && grantType !== "refresh_token") {
-    return oauthError(400, "unsupported_grant_type", "grant_type harus authorization_code atau refresh_token");
+    return oauthError(400, "unsupported_grant_type", "grant_type must be authorization_code or refresh_token");
   }
 
   if (grantType === "authorization_code") {
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     const codeVerifier = field("code_verifier");
     const redirectUri = field("redirect_uri");
     if (!code || !codeVerifier || !redirectUri) {
-      return oauthError(400, "invalid_request", "code, code_verifier, dan redirect_uri wajib diisi");
+      return oauthError(400, "invalid_request", "code, code_verifier and redirect_uri are required");
     }
 
     const outcome = await exchangeAuthCode({ code, codeVerifier, redirectUri });
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
       return oauthError(
         403,
         "access_denied",
-        "Akun Anda belum memiliki izin / allowance untuk mengakses BMad Workspace ini."
+        "Your account does not have permission (allowance) to access this BMad Workspace yet."
       );
     }
     return NextResponse.json({
@@ -69,13 +69,13 @@ export async function POST(req: Request) {
 
   const outcome = await rotateMcpRefreshToken(refreshToken);
   if (outcome.status === "invalid_grant") {
-    return oauthError(400, "invalid_grant", "refresh token tidak valid atau sudah dipakai");
+    return oauthError(400, "invalid_grant", "refresh token is invalid or already used");
   }
   if (outcome.status === "forbidden") {
     return oauthError(
       403,
       "access_denied",
-      "Akses dicabut: akun Anda tidak lagi memiliki allowance di Web Dashboard."
+      "Access revoked: your account no longer has an allowance in the Web Dashboard."
     );
   }
   return NextResponse.json({

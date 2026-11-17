@@ -430,3 +430,36 @@ describe("two-tab synchronisation", () => {
     expect(world.tabs[0].writes).toBe(0);
   });
 });
+
+describe("board URLs", () => {
+  // Imported lazily so this block stays self-contained at the end of the file.
+  const load = () => import("./project-selection");
+  const projects = [
+    { id: "prj_aaaaaaaaaaaaaaaa", slug: "uji-workflow" },
+    { id: "prj_bbbbbbbbbbbbbbbb", slug: null },
+  ];
+
+  it("reads the workspace segment only on the Agent Board", async () => {
+    const { boardSegment } = await load();
+    expect(boardSegment("/")).toBeNull();
+    expect(boardSegment("/agent-boardx")).toBeNull();
+    expect(boardSegment("/agent-board")).toBe("");
+    expect(boardSegment("/agent-board/uji-workflow")).toBe("uji-workflow");
+    expect(boardSegment("/agent-board/uji%20x/extra")).toBe("uji x");
+  });
+
+  it("links by slug and falls back to the id", async () => {
+    const { boardHref } = await load();
+    expect(boardHref(projects[0])).toBe("/agent-board/uji-workflow");
+    expect(boardHref(projects[1])).toBe("/agent-board/prj_bbbbbbbbbbbbbbbb");
+  });
+
+  it("finds a workspace by slug or id, and nothing for an unknown segment", async () => {
+    const { findBySegment } = await load();
+    expect(findBySegment(projects, "uji-workflow")?.id).toBe("prj_aaaaaaaaaaaaaaaa");
+    expect(findBySegment(projects, "prj_bbbbbbbbbbbbbbbb")?.id).toBe("prj_bbbbbbbbbbbbbbbb");
+    expect(findBySegment(projects, "prj_aaaaaaaaaaaaaaaa")?.slug).toBe("uji-workflow");
+    expect(findBySegment(projects, "gone")).toBeNull();
+    expect(findBySegment(projects, "")).toBeNull();
+  });
+});

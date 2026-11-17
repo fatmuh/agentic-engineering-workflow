@@ -73,7 +73,7 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
       setProviders(payload as ProviderView[]);
       setStatus("ready");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal memuat daftar provider.");
+      setError(err instanceof Error ? err.message : "Couldn't load the provider list.");
       setStatus("error");
     }
   }, []);
@@ -104,11 +104,11 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
         const detail = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(detail?.error ?? `HTTP ${response.status}`);
       }
-      toast.success("Provider disimpan.");
+      toast.success("Provider saved.");
       setForm(EMPTY_FORM);
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan provider.");
+      toast.error(err instanceof Error ? err.message : "Couldn't save the provider.");
     } finally {
       setSaving(false);
     }
@@ -133,29 +133,29 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
         <div>
           <h1 className="text-lg font-medium">LLM Providers</h1>
           <p className="text-xs text-muted-foreground">
-            Registry provider yang dipakai tool <code>awm_provider_list</code> dan{" "}
-            <code>awm_provider_select</code>.
+            The provider registry behind the <code>awm_provider_list</code> and{" "}
+            <code>awm_provider_select</code> tools.
           </p>
         </div>
         <Button size="sm" variant="secondary" onClick={() => void load()} icon={<RefreshCw />}>
-          Muat ulang
+          Reload
         </Button>
       </div>
 
       {status === "error" && (
         <div className="flex flex-wrap items-center gap-2 rounded-[10px] bg-muted/50 px-3 py-3 text-xs">
           <TriangleAlert aria-hidden="true" />
-          <span role="status">Gagal memuat daftar provider. {error}</span>
+          <span role="status">Could not load the provider list. {error}</span>
           <Button size="sm" variant="ghost" onClick={() => void load()}>
-            Coba lagi
+            Try again
           </Button>
         </div>
       )}
 
       {status !== "error" && providers.length === 0 && (
         <p role="status" className="rounded-[10px] bg-muted/50 px-3 py-6 text-center text-xs text-muted-foreground">
-          Belum ada provider terdaftar. Tool <code>awm_provider_select</code> akan kosong sampai satu
-          provider ditambahkan.
+          No providers yet. The <code>awm_provider_select</code> tool stays empty until a
+          provider is added.
         </p>
       )}
 
@@ -176,7 +176,7 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
                   <Badge variant="outline">{provider.id}</Badge>
                   {canManage && (
                     <Button size="sm" variant="ghost" onClick={() => edit(provider)}>
-                      Ubah
+                      Edit
                     </Button>
                   )}
                 </div>
@@ -197,7 +197,7 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
                     })
                   }
                 >
-                  {isRevealed ? "Sembunyikan" : "Tampilkan"}
+                  {isRevealed ? "Hide" : "Show"}
                 </button>
               </p>
             </li>
@@ -207,14 +207,14 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
 
       {canManage ? (
         <form onSubmit={submit} className="flex flex-col gap-2 rounded-[10px] border border-border px-3 py-4">
-          <h2 className="text-sm font-medium">{form.id ? `Ubah ${form.id}` : "Tambah provider"}</h2>
+          <h2 className="text-sm font-medium">{form.id ? `Edit ${form.id}` : "Add provider"}</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Nama</span>
+              <span className="text-muted-foreground">Name</span>
               <Input value={form.name} required onChange={(event) => setForm({ ...form, name: event.target.value })} />
             </label>
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Tipe</span>
+              <span className="text-muted-foreground">Type</span>
               <select
                 className="rounded-md border border-border bg-background px-2 py-1.5 text-xs"
                 value={form.providerType}
@@ -235,7 +235,7 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
             </label>
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="text-muted-foreground">
-                API key {form.id && <span className="opacity-75">(kosongkan untuk mempertahankan yang tersimpan)</span>}
+                API key {form.id && <span className="opacity-75">(leave empty to keep the stored key)</span>}
               </span>
               <Input
                 type="password"
@@ -252,22 +252,22 @@ export function ProvidersView({ initialProviders }: { initialProviders: Provider
               checked={form.isTeamShared}
               onChange={(event) => setForm({ ...form, isTeamShared: event.target.checked })}
             />
-            <span>Dibagikan ke tim</span>
+            <span>Shared with the team</span>
           </label>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" loading={saving}>
-              Simpan
+              Save
             </Button>
             {form.id && (
               <Button type="button" size="sm" variant="ghost" onClick={() => setForm(EMPTY_FORM)}>
-                Batal
+                Cancel
               </Button>
             )}
           </div>
         </form>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Anda hanya dapat melihat provider. Peran dengan izin <code>providers.manage</code> dapat menambah atau mengubahnya.
+          You can only view providers. Roles with the <code>providers.manage</code> permission can add or change them.
         </p>
       )}
     </div>

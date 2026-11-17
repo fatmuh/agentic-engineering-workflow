@@ -10,8 +10,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
+import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import {
+  boardHref,
+  boardSegment,
+  findBySegment,
   persistSelection,
   readSelection,
   selectionFromStorageEvent,
@@ -33,6 +38,8 @@ export interface WorkspaceProject {
   name: string;
   gitRemoteUrl: string | null;
   workspacePath: string | null;
+  /** URL segment of `/agent-board/<slug>`; null for a row that has none yet. */
+  slug: string | null;
 }
 
 interface ProjectContextValue {
@@ -44,6 +51,10 @@ interface ProjectContextValue {
   /** `"error"` means the list could not be read — not that there are no projects. */
   status: ProjectStatus;
   setProjectId(id: string): void;
+  /** Switch workspace the way a user does: on the Agent Board this navigates
+   *  to the workspace's URL (the URL is what selects it there); elsewhere it
+   *  sets the selection directly. */
+  selectProject(id: string): void;
   reload(): void;
   /** Add a project created in this tab and make it the active one, without a
    *  round trip: the create response already is the row the list would hold. */
@@ -76,6 +87,7 @@ export function toProject(value: unknown): WorkspaceProject | null {
     name: row.name,
     gitRemoteUrl: typeof row.gitRemoteUrl === "string" ? row.gitRemoteUrl : null,
     workspacePath: typeof row.workspacePath === "string" ? row.workspacePath : null,
+    slug: typeof row.slug === "string" && row.slug ? row.slug : null,
   };
 }
 
@@ -114,8 +126,22 @@ export function workspaceSubtitle(project: WorkspaceProject): string {
       // Not a URL — fall through to the path-based label below.
     }
   }
-  if (project.workspacePath) return "Workspace lokal";
+  if (project.workspacePath) return "Local workspace";
   return "Workspace";
+}
+
+/**
+ * Change the board URL without a route navigation. `/agent-board` and
+ * `/agent-board/<slug>` render the same view, and Next keeps a navigated-away
+ * page mounted (hidden) under cacheComponents, so `router.push` would leave a
+ * second board in the DOM and remount the visible one. Next integrates native
+ * `pushState`/`replaceState` with `usePathname`, which is all the selection
+ * reads; Back and Forward walk these entries like any other.
+ */
+function setBoardUrl(href: string, mode: "push" | "replace"): void {
+  if (window.location.pathname === href) return;
+  if (mode === "push") window.history.pushState(null, "", href);
+  else window.history.replaceState(null, "", href);
 }
 
 /**
@@ -129,6 +155,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [projectId, setProjectIdState] = useState<string | null>(null);
   const [status, setStatus] = useState<ProjectStatus>("loading");
   const [reloadToken, setReloadToken] = useState(0);
+  // On the Agent Board the URL names the workspace (`/agent-board/<slug>`), so
+  // it, not localStorage or another tab, decides the selection there.
+  const pathname = usePathname();
+  const segment = boardSegment(pathname);
+  // For the `storage` listener, which is registered once.
+  const segmentRef = useRef(segment);
+  useEffect(() => {
+    segmentRef.current = segment;
+  }, [segment]);
+  // The last unknown segment reported, so one bad link is reported once.
+  const reportedSegment = useRef<string | null>(null);
   // The id this tab adopted from ANOTHER tab's `storage` event. The persist
   // effect skips it, so adopting a selection is never echoed back — without
   // this, two tabs would write each other's selection forever and only the
@@ -172,7 +209,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (ignore) return;
-        console.warn("[Workspace] Gagal memuat daftar project:", error);
+        console.warn("[Workspace] Failed to load the project list:", error);
         setStatus("error");
       });
     return () => {
@@ -200,6 +237,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       area = undefined;
     }
     const onStorage = (event: StorageEvent) => {
+      // A board URL names its workspace; another tab's choice must not
+      // override what this tab's address bar says.
+      if (segmentRef.current) return;
       // `storageArea` is checked against this tab's localStorage: a same-key
       // write to sessionStorage (an iframe, another library) fires this event
       // too and is not a workspace switch.
@@ -230,7 +270,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const name = adoptedRef.current;
     if (name === null) return;
     adoptedRef.current = null;
-    announce(`Beralih ke workspace ${name}.`);
+    announce(`Switched to workspace ${name}.`);
   }, [projectId, announce]);
 
   // Persist only a selection the list confirmed. Writing during the initial
@@ -268,6 +308,39 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setReloadToken(current => current + 1);
   }, []);
 
+  // URL → selection on the Agent Board: `/agent-board/<slug>` selects that
+  // workspace. Adjusted during render (not in an effect) so the board never
+  // renders, or fetches, the previous workspace for a frame. The persist
+  // effect then remembers it, which is what makes the next visit open here.
+  const urlProject = status === "ready" && segment ? findBySegment(projects, segment) : null;
+  if (urlProject && urlProject.id !== projectId) {
+    setProjectIdState(urlProject.id);
+  }
+
+  // `/agent-board` moves to the active workspace's URL, and an unknown segment
+  // is reported once and replaced the same way.
+  useEffect(() => {
+    if (status !== "ready" || segment === null || urlProject) return;
+    if (segment && reportedSegment.current !== segment) {
+      reportedSegment.current = segment;
+      toast.error(`Workspace "${segment}" not found.`);
+    }
+    const active = projects.find(item => item.id === projectId);
+    if (active) setBoardUrl(boardHref(active), "replace");
+  }, [status, segment, urlProject, projects, projectId]);
+
+  const selectProject = useCallback((id: string) => {
+    const target = projectsRef.current.find(item => item.id === id);
+    if (segment !== null && target) {
+      // Only navigate: the effect above selects from the new URL. Setting the
+      // selection here too would let that effect, still seeing the old URL,
+      // switch it straight back.
+      setBoardUrl(boardHref(target), "push");
+      return;
+    }
+    setProjectId(id);
+  }, [segment, setProjectId]);
+
   const addProject = useCallback((created: WorkspaceProject) => {
     const list = projectsRef.current.some(item => item.id === created.id)
       ? projectsRef.current
@@ -276,9 +349,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProjects(list);
     setStatus("ready");
     // The user's own choice, exactly like picking it in the switcher.
+    if (segment !== null) {
+      setBoardUrl(boardHref(created), "push");
+      return;
+    }
     receivedProjectId.current = null;
     setProjectIdState(created.id);
-  }, []);
+  }, [segment]);
 
   const value = useMemo<ProjectContextValue>(() => ({
     projects,
@@ -286,9 +363,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     project: projects.find(project => project.id === projectId) ?? null,
     status,
     setProjectId,
+    selectProject,
     reload,
     addProject,
-  }), [projects, projectId, status, setProjectId, reload, addProject]);
+  }), [projects, projectId, status, setProjectId, selectProject, reload, addProject]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }

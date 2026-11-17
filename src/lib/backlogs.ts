@@ -430,7 +430,7 @@ export async function promoteBacklogToTask(
           row.title,
           row.raw_description,
           targetStage,
-          JSON.stringify([{ text: `Dipromosikan dari backlog ${backlogId}`, time: "now" }]),
+          JSON.stringify([{ text: `Promoted from backlog ${backlogId}`, time: new Date().toISOString() }]),
         ]
       );
       const updatedBacklog = await client.query(

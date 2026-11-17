@@ -18,6 +18,7 @@ import { UserProfileMenu } from "./user-profile-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { useActiveProject, workspaceSubtitle } from "./project-context";
+import { boardHref } from "./project-selection";
 import { WORKSPACE_LIST_FAILED } from "./workspace-switcher-state";
 import { useAnnounce } from "./announcement-context";
 import { usePermission } from "./permission-provider";
@@ -33,12 +34,16 @@ function AdminNavigation({ currentRoute, collapsed = false, onNavigate }: { curr
   // The whole section — label included — disappears when nothing is grantable.
   if (adminPages.length === 0) return null;
   return (
-    <nav aria-label="Admin" className="mt-[22px] flex w-full flex-col gap-1.5">
-      {!collapsed && <p className="px-2.5 text-xs font-medium text-muted-foreground">Admin</p>}
-      {adminPages.map(item => <Link key={item.id} href={item.href} aria-label={item.label} title={collapsed ? item.label : undefined} aria-current={currentRoute === item.id ? "page" : undefined} onClick={onNavigate}
-        className={cn("flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors", collapsed ? "mx-auto size-9 justify-center" : "w-full px-2.5", currentRoute === item.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent")}>
-        <item.icon className="size-4 shrink-0" aria-hidden="true" />{!collapsed && <span>{item.label}</span>}
-      </Link>)}
+    // Same rhythm as the workspace links and Watching: 31px rows 4px apart,
+    // and a 20px section label 6px above the first row.
+    <nav aria-label="Admin" className="mt-[22px] w-full">
+      {!collapsed && <p className="flex h-5 items-center px-2.5 text-xs font-medium text-muted-foreground">Admin</p>}
+      <div className={cn("w-full space-y-[4px]", !collapsed && "mt-1.5")}>
+        {adminPages.map(item => <Link key={item.id} href={item.href} aria-label={item.label} title={collapsed ? item.label : undefined} aria-current={currentRoute === item.id ? "page" : undefined} onClick={onNavigate}
+          className={cn("flex h-[31px] items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors", collapsed ? "mx-auto size-9 justify-center" : "w-full px-2.5", currentRoute === item.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent")}>
+          <item.icon className="size-4 shrink-0" aria-hidden="true" />{!collapsed && <span>{item.label}</span>}
+        </Link>)}
+      </div>
     </nav>
   );
 }
@@ -79,8 +84,8 @@ function WorkspaceListRecovery({ collapsed, onRetry }: {
       <button
         type="button"
         onClick={retry}
-        title={`${sentence} Coba lagi`}
-        aria-label={`${sentence} Coba lagi`}
+        title={`${sentence} Try again`}
+        aria-label={`${sentence} Try again`}
         className="mx-auto mt-1 flex size-8 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 cursor-pointer"
       >
         <AlertCircle className="size-4" aria-hidden="true" />
@@ -96,7 +101,7 @@ function WorkspaceListRecovery({ collapsed, onRetry }: {
         onClick={retry}
         className="shrink-0 cursor-pointer font-medium underline hover:text-neutral-900 dark:hover:text-neutral-100"
       >
-        Coba lagi
+        Try again
       </button>
     </div>
   );
@@ -120,7 +125,7 @@ export function AppSidebar({
   // The workspace list and the active workspace both come from the shared
   // project context — the same state the Agent Board reads its requests from,
   // so choosing here is what the board shows.
-  const { projects, projectId, project, setProjectId, status: projectStatus, reload } = useActiveProject();
+  const { projects, projectId, project, selectProject, status: projectStatus, reload } = useActiveProject();
   const announce = useAnnounce();
   const [createOpen, setCreateOpen] = useState(false);
   // The mobile drawer closes first: the dialog should not open on top of it.
@@ -144,13 +149,13 @@ export function AppSidebar({
     // Clearing the active row is not a switch — there is nothing to tell the
     // user about, and announcing an empty name would be noise.
     if (!next || next.id === projectId) return;
-    setProjectId(next.id);
+    selectProject(next.id);
     // One sentence, two destinations. Sonner already exposes its own
     // `aria-live`, but a toast disappears after a few seconds (and a second
     // identical toast can replace the first before it is read); the shell's
     // region persists, so the sentence is still there when the reader reaches
     // it, and every write is re-announced even if the text is unchanged.
-    const sentence = `Beralih ke workspace ${next.name}`;
+    const sentence = `Switched to workspace ${next.name}`;
     toast.success(sentence);
     announce(`${sentence}.`);
   };
@@ -158,7 +163,11 @@ export function AppSidebar({
   // Permission-filtered nav: mobile and desktop maps both render this list, so
   // an ungrantable page never appears in either (hidden is the safe direction
   // while permissions are still loading, too).
-  const navItems = WORKSPACE_PAGES.filter(page => can(`${page.id}.view`));
+  // The Agent Board link goes straight to the active workspace's board, so it
+  // never lands on /agent-board and redirects.
+  const navItems = WORKSPACE_PAGES.filter(page => can(`${page.id}.view`)).map(page =>
+    page.id === "agent-board" && project ? { ...page, href: boardHref(project) } : page,
+  );
   const canWatchWatching = can("watching.view");
   const watchingItems = WATCHED_COMPANIES;
 

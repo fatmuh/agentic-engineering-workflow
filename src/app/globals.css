@@ -335,6 +335,20 @@
     background-color: var(--background);
     color: var(--foreground);
   }
+  /* Everything a click acts on shows the pointer. Tailwind v4's preflight
+     dropped the browser's pointer on buttons, so without this each component
+     had to remember `cursor-pointer` and many did not. Disabled controls are
+     left out, and `:where()` keeps the specificity at zero, so any component
+     that sets its own cursor (text, grab, not-allowed) still wins. */
+  :where(
+    a[href], button, summary, select, label[for],
+    label:has(> input[type="checkbox"], > input[type="radio"]),
+    input:is([type="submit"], [type="button"], [type="reset"], [type="checkbox"], [type="radio"], [type="file"], [type="color"]),
+    [role="button"], [role="link"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="option"],
+    [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]
+  ):where(:not(:disabled, [aria-disabled="true"], [data-disabled])) {
+    cursor: pointer;
+  }
 }
 
 /* Custom sleek floating pill scrollbar */

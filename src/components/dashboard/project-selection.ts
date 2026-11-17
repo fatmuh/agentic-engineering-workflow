@@ -142,3 +142,41 @@ export function persistSelection(input: PersistSelectionInput): string | null {
   if (stored === projectId) return null;
   return projectId;
 }
+
+/** Where the Agent Board lives; `/agent-board/<slug>` names the workspace. */
+export const AGENT_BOARD_PATH = "/agent-board";
+
+/**
+ * What the path says about the board's workspace:
+ *   - `null`: not on the Agent Board, the URL names no workspace;
+ *   - `""`: on `/agent-board` itself, which should move to the active one;
+ *   - otherwise the decoded segment, a slug or (for rows without one) an id.
+ */
+export function boardSegment(pathname: string): string | null {
+  if (pathname === AGENT_BOARD_PATH) return "";
+  if (!pathname.startsWith(`${AGENT_BOARD_PATH}/`)) return null;
+  const raw = pathname.slice(AGENT_BOARD_PATH.length + 1).split("/")[0];
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+interface SegmentTarget {
+  id: string;
+  slug: string | null;
+}
+
+/** The board URL of a workspace: its slug, or its id when it has none yet. */
+export function boardHref(project: SegmentTarget): string {
+  return `${AGENT_BOARD_PATH}/${encodeURIComponent(project.slug ?? project.id)}`;
+}
+
+/** The workspace a board segment names. A `prj_*` segment is an id (slugs
+ *  never contain `_`), anything else a slug. */
+export function findBySegment<T extends SegmentTarget>(projects: readonly T[], segment: string): T | null {
+  if (!segment) return null;
+  const bySlug = segment.startsWith("prj_") ? undefined : projects.find(project => project.slug === segment);
+  return bySlug ?? projects.find(project => project.id === segment) ?? null;
+}

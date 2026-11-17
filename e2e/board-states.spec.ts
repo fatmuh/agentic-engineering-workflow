@@ -36,9 +36,10 @@ const ADMIN_EMAIL = "board-states-admin@e2e.test";
 /** The key `project-context.tsx` persists the active project id under. */
 const ACTIVE_PROJECT_KEY = "bmad-monitor.active-project-id";
 
-const TASKS_ERROR = "Gagal memuat task workspace ini. Periksa koneksi database lalu tekan Refresh.";
-const TREE_ERROR = "Gagal memuat pohon agen workspace ini.";
-const TREE_EMPTY = (name: string) => `Belum ada pohon agen di workspace ${name}.`;
+const TASKS_ERROR = "Couldn't load this workspace's tasks. Check the database connection, then press Refresh.";
+const TREE_ERROR = "Couldn't load this workspace's agent tree.";
+/** A workspace no session has reported to shows how to make one appear. */
+const TREE_EMPTY = "No agent sessions yet";
 
 interface Fixture {
   projectId: string;
@@ -143,7 +144,8 @@ test("a failing agent-tree leaves the task list intact and reports the failure o
 
   await login(page, ADMIN_EMAIL);
   // Registered before navigation: the board's very first load must hit it too.
-  await page.route(`**/api/projects/${fixture.projectId}/agent-tree`, (route) =>
+  // The Worktree asks for `agent-tree?sessions=1`; the glob must cover the query.
+  await page.route(`**/api/projects/${fixture.projectId}/agent-tree?**`, (route) =>
     route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' }),
   );
   await openBoardOnProject(page, fixture.projectId);
@@ -179,7 +181,7 @@ test("a failing tasks request leaves an EMPTY agent tree reported as empty, not 
 
   // The tree loaded (empty), so its tab says "no tree here" — never "failed".
   await page.getByRole("tab", { name: "Worktree" }).click();
-  await expect(page.getByText(TREE_EMPTY(fixture.projectName), { exact: true })).toBeVisible();
+  await expect(page.locator("[data-worktree-empty]")).toContainText(TREE_EMPTY);
   await expect(treeFailure(page)).toHaveCount(0);
 });
 

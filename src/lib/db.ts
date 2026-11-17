@@ -1,4 +1,5 @@
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
+import { nextFreeSlug, slugify } from "./project-slug.mjs";
 import {
   BOOTSTRAP_LOCK_TIMEOUT_MS,
   SCHEMA_BOOTSTRAP_ADVISORY_LOCK,
@@ -88,6 +89,19 @@ export const pool = new Pool({
  *   `/Users/X/proj` and `/users/x/proj` are one key. Two rows that collapse
  *   into one key abort the boot with a message naming both projects — merging
  *   is never automatic. Same bootstrap-client shape as v7/v8.
+ *
+ * v10 gives every project a URL slug (`/agent-board/<slug>`):
+ *   bmad_projects.slug, unique (uq_bmad_projects_slug). Rows without one are
+ *   backfilled from their name in creation order, so the oldest project keeps
+ *   the bare slug and later namesakes get `-2`, `-3`. Only NULL slugs are
+ *   touched, so the backfill is a no-op on every boot after the first, and a
+ *   slug never changes once written (see ./project-slug).
+ *
+ * v11 records when a task ran (`started_at`, `completed_at` on bmad_tasks), for
+ * the board's duration and finish time. A trigger keeps them, so every writer
+ * (batch upsert, PATCH, backlog promotion, seed) is covered without each query
+ * remembering to. Rows that predate the columns get `updated_at` as their best
+ * known time, once, when the columns are added.
  */
 let schemaReady: Promise<void> | null = null;
 
@@ -654,7 +668,7 @@ async function migrateWorkspaceCaseFold(client: PoolClient): Promise<void> {
 }
 
 /**
- * Every schema block, v2 through v9, applied to the caller's transaction.
+ * Every schema block, v2 through v11, applied to the caller's transaction.
  *
  * Split from ensureSchema so the transaction's shape (connect, lock, run,
  * commit) is readable on its own; nothing here opens or closes a
@@ -1024,6 +1038,91 @@ async function bootstrapSchema(client: PoolClient): Promise<void> {
   // the index (to drop it) and the column (to fold it). Catalog-guarded
   // steps in migrateWorkspaceCaseFold.
   await migrateWorkspaceCaseFold(client);
+
+  // ---- Schema v10: project URL slugs ------------------------------------
+  // After v9 so it never races the identity rebuild; independent of it.
+  await migrateProjectSlugs(client);
+
+  // ---- Schema v11: task run times ---------------------------------------
+  await migrateTaskRunTimes(client);
+}
+
+/** Stages in which a task is being worked on, and in which it is closed. */
+const RUNNING_STAGES_SQL = "('in_progress', 'analysis')";
+const CLOSED_STAGES_SQL = "('completed', 'rejected')";
+
+/** Schema v11 — see the header. Runs on the bootstrap transaction's client. */
+async function migrateTaskRunTimes(client: PoolClient): Promise<void> {
+  const existing = await client.query(
+    `SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'bmad_tasks' AND column_name = 'completed_at'`
+  );
+  if (existing.rows.length === 0) {
+    await client.query(
+      `ALTER TABLE bmad_tasks ADD COLUMN started_at TIMESTAMPTZ, ADD COLUMN completed_at TIMESTAMPTZ`
+    );
+    await client.query(`UPDATE bmad_tasks SET started_at = updated_at WHERE stage IN ${RUNNING_STAGES_SQL}`);
+    await client.query(`UPDATE bmad_tasks SET completed_at = updated_at WHERE stage IN ${CLOSED_STAGES_SQL}`);
+  }
+  // Entering a running stage starts the clock (again, when the task had been
+  // closed); entering a closed stage stops it; reopening clears the stop.
+  await client.query(`
+    CREATE OR REPLACE FUNCTION bmad_tasks_run_times() RETURNS trigger LANGUAGE plpgsql AS $fn$
+    DECLARE
+      was_running boolean := TG_OP = 'UPDATE' AND OLD.stage IN ${RUNNING_STAGES_SQL};
+      was_closed  boolean := TG_OP = 'UPDATE' AND OLD.stage IN ${CLOSED_STAGES_SQL};
+    BEGIN
+      IF TG_OP = 'UPDATE' THEN
+        NEW.started_at := OLD.started_at;
+        NEW.completed_at := OLD.completed_at;
+      END IF;
+      IF NEW.stage IN ${RUNNING_STAGES_SQL} THEN
+        IF NOT was_running THEN
+          NEW.started_at := CASE WHEN was_closed THEN now() ELSE COALESCE(NEW.started_at, now()) END;
+        END IF;
+        NEW.completed_at := NULL;
+      ELSIF NEW.stage IN ${CLOSED_STAGES_SQL} THEN
+        IF NOT was_closed OR NEW.completed_at IS NULL THEN
+          NEW.completed_at := now();
+        END IF;
+      ELSE
+        NEW.completed_at := NULL;
+      END IF;
+      RETURN NEW;
+    END
+    $fn$
+  `);
+  const trigger = await client.query(
+    `SELECT 1 FROM pg_trigger WHERE tgname = 'bmad_tasks_run_times' AND tgrelid = 'bmad_tasks'::regclass`
+  );
+  if (trigger.rows.length === 0) {
+    await client.query(
+      `CREATE TRIGGER bmad_tasks_run_times BEFORE INSERT OR UPDATE OF stage ON bmad_tasks
+         FOR EACH ROW EXECUTE FUNCTION bmad_tasks_run_times()`
+    );
+  }
+}
+
+/** Schema v10 — see the header. Runs on the bootstrap transaction's client. */
+async function migrateProjectSlugs(client: PoolClient): Promise<void> {
+  await client.query(`ALTER TABLE bmad_projects ADD COLUMN IF NOT EXISTS slug TEXT`);
+  const missing = await client.query<{ id: string; name: string }>(
+    `SELECT id, name FROM bmad_projects WHERE slug IS NULL ORDER BY created_at, id`
+  );
+  if (missing.rows.length > 0) {
+    const taken = new Set(
+      (await client.query<{ slug: string }>(`SELECT slug FROM bmad_projects WHERE slug IS NOT NULL`))
+        .rows.map(row => row.slug)
+    );
+    for (const row of missing.rows) {
+      const slug = nextFreeSlug(slugify(row.name), taken);
+      taken.add(slug);
+      await client.query(`UPDATE bmad_projects SET slug = $1 WHERE id = $2`, [slug, row.id]);
+    }
+  }
+  await client.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_bmad_projects_slug ON bmad_projects (slug)`
+  );
 }
 
 /**

@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { ChatGptIcon, ClaudeIcon, FigmaIcon, GithubIcon, GoogleGeminiIcon, NotionIcon, SlackIcon, StripeIcon } from "@hugeicons/core-free-icons";
-import type { AgentTaskState } from "./agent-board-data";
 import { parseDurationToSeconds, formatSecondsToDuration } from "./agent-board-data";
-import { formatTokens, type WorktreeAvatar, type WorktreeNode, type WorktreeTool } from "./worktree-tree-data";
+import { formatTokens, type WorktreeAvatar, type WorktreeNode, type WorktreeState, type WorktreeTool } from "./worktree-tree-data";
 import { AlertCircle, Check, ChevronDown, Clock } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
@@ -23,14 +22,14 @@ const toolIcons: Record<Exclude<WorktreeTool, "hubspot">, IconSvgElement> = {
   stripe: StripeIcon,
 };
 
-const stateWord: Record<AgentTaskState, string> = {
+const stateWord: Record<WorktreeState, string> = {
   waiting: "Needs you",
   failed: "Failed",
   running: "Running",
   done: "Done",
 };
 
-function StateBadgeIcon({ state }: { state: AgentTaskState }) {
+function StateBadgeIcon({ state }: { state: WorktreeState }) {
   if (state === "running") return <span aria-hidden="true" className="size-2.5 rounded-full border-[1.5px] border-current/25 border-t-current motion-safe:animate-spin" />;
   if (state === "done") return <Check className="size-2.5" />;
   if (state === "failed") return <AlertCircle className="size-2.5" />;

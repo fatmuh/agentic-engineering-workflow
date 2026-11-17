@@ -45,12 +45,12 @@ function contrast(fg, bg) {
       await page.waitForURL(url => new URL(url).pathname === '/', { timeout: 60_000 });
     }
     await page.goto(`${base}/users`);
-    // Accessible name is `<active workspace> — ganti workspace` since story 6.
-    const trigger = () => page.getByRole('button', { name: /ganti workspace/i }).filter({ visible: true });
+    // Accessible name is `<active workspace> — switch workspace` since story 6.
+    const trigger = () => page.getByRole('button', { name: /switch workspace/i }).filter({ visible: true });
     // The list is still loading on first paint; every measurement below needs
     // the ready state, so wait for the trigger to name a workspace before the
     // keyboard loop starts (a loading menu has no radio rows to focus).
-    await trigger().filter({ hasNotText: 'Memuat workspace' }).waitFor({ timeout: 30_000 });
+    await trigger().filter({ hasNotText: 'Loading workspaces' }).waitFor({ timeout: 30_000 });
     const menu = page.getByRole('menu');
     for (const mode of ['light', 'dark']) {
       await page.evaluate(mode => document.documentElement.classList.toggle('dark', mode === 'dark'), mode);
@@ -100,7 +100,7 @@ function contrast(fg, bg) {
       await page.screenshot({ path: `${shots}/${mode}.png` });
       await page.keyboard.press('Escape');
       await menu.waitFor({ state: 'hidden' });
-      await page.waitForFunction(() => /ganti workspace/i.test(document.activeElement?.getAttribute('aria-label') ?? ''));
+      await page.waitForFunction(() => /switch workspace/i.test(document.activeElement?.getAttribute('aria-label') ?? ''));
     }
     await trigger().focus();
     await page.keyboard.press('Enter');
@@ -120,10 +120,10 @@ function contrast(fg, bg) {
     // Story 6: the name is the trigger text and the accessible name starts
     // with it, followed by the state clause.
     assert.equal(await trigger().innerText(), targetName);
-    assert.match(await trigger().getAttribute('aria-label'), new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} — ganti workspace`));
+    assert.match(await trigger().getAttribute('aria-label'), new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} — switch workspace`));
     await trigger().click();
     assert.equal(await page.getByRole('menuitemradio', { name: new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).getAttribute('aria-checked'), 'true');
-    assert.equal(await page.getByRole('menuitem', { name: 'Buat workspace' }).getAttribute('aria-disabled'), null);
+    assert.equal(await page.getByRole('menuitem', { name: 'Create workspace' }).getAttribute('aria-disabled'), null);
     await page.keyboard.press('Escape');
     await menu.waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Collapse sidebar (Cmd+B)' }).click();
